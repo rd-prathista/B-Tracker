@@ -4,8 +4,16 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# ── SECRET / ENVIRONMENT FILES ────────────────────────────────────────────────
+# NEVER commit real credentials. Only .env.example (with placeholders) is safe.
 .env
 .env.local
+.env.development
+.env.production
+.env.staging
+# ─────────────────────────────────────────────────────────────────────────────
+
 .DS_Store
 *.jks
 *.p12

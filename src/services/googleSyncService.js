@@ -6,9 +6,10 @@ import { getAppDataAsJSON, importBackupData } from './backupService';
 WebBrowser.maybeCompleteAuthSession();
 
 // --- CONFIGURATION ---
-// We will use the Firebase Auth REST API directly
-const FIREBASE_API_KEY = 'AIzaSyCgu5ASIVjSWKJmOEXP5b1uHI8D1_sdNQo';
-const PROJECT_ID = 'b-tracker-28';
+// Credentials are loaded from .env (never hardcoded)
+// See .env.example for the required variable names.
+const FIREBASE_API_KEY = process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
+const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
 
 /**
  * Get saved access token (we'll use this for our session)
@@ -34,7 +35,7 @@ export const getLastSyncTimestamp = async () => {
  */
 export const authConfig = {
   // We'll keep this for the UI, but we're changing the logic in SettingsScreen
-  clientId: '734993274471-8cms386s2iqg7qth6oc2ig9forbi4lbf.apps.googleusercontent.com',
+  clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
   scopes: ['email', 'profile', 'openid'],
   useProxy: true,
 };

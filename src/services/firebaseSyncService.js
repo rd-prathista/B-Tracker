@@ -1,8 +1,10 @@
 import { getAppDataAsJSON, importBackupData } from './backupService';
 import * as SecureStore from 'expo-secure-store';
 
-const PROJECT_ID = 'b-tracker-28';
-const FIREBASE_API_KEY = 'AIzaSyCgu5ASIVjSWKJmOEXP5b1uHI8D1_sdNQo';
+// Credentials are loaded from .env (never hardcoded)
+// See .env.example for the required variable names.
+const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
+const FIREBASE_API_KEY = process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
 
 /**
  * Register or Login a user using Email/Password via Firebase REST API
