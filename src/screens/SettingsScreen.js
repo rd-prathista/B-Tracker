@@ -12,9 +12,11 @@ import {
   getLoggedInEmail,
   firebaseLogout
 } from '../services/firebaseSyncService';
+import { getAppSettings, updateAppSettings } from '../database/db';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import FadeInView from '../components/FadeInView';
+import { checkBiometricsAvailability, isBiometricsEnabledInSettings } from '../services/biometricService';
 
 export default function SettingsScreen({ navigation, route }) {
   const { onLogout } = route.params || {};
@@ -28,6 +30,17 @@ export default function SettingsScreen({ navigation, route }) {
   const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // 'backup' or 'restore'
+  
+  // Entry Preferences
+  const [currencyMode, setCurrencyMode] = useState('AED');
+  const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [settingLoading, setSettingLoading] = useState(false);
+
+  // Biometrics
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+
+
 
   useEffect(() => {
     loadSyncInfo();
@@ -38,7 +51,18 @@ export default function SettingsScreen({ navigation, route }) {
     if (ts) setLastSync(new Date(ts).toLocaleString());
     const savedEmail = await getLoggedInEmail();
     setUserEmail(savedEmail);
+
+    const settings = getAppSettings();
+    if (settings?.default_currency_mode) {
+      setCurrencyMode(settings.default_currency_mode);
+    }
+    setBiometricsEnabled(!!settings?.biometrics_enabled);
+
+    const available = await checkBiometricsAvailability();
+    setBiometricsAvailable(available);
   };
+
+
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -178,15 +202,56 @@ export default function SettingsScreen({ navigation, route }) {
     ]);
   };
 
-  const SettingItem = ({ icon, label, onPress, color = colors.text, rightContent, disabled = false }) => (
+  const handleToggleBiometrics = async () => {
+    if (settingLoading) return;
+    setSettingLoading(true);
+    try {
+      const newVal = !biometricsEnabled ? 1 : 0;
+      updateAppSettings('biometrics_enabled', newVal);
+      setBiometricsEnabled(!!newVal);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update biometric setting');
+    } finally {
+      setSettingLoading(true); // Wait, should be false, but I want to prevent double taps
+      setTimeout(() => setSettingLoading(false), 500);
+    }
+  };
+
+  const handleCurrencyModeSelect = async (mode) => {
+
+    if (settingLoading) return;
+    setSettingLoading(true);
+    try {
+      updateAppSettings('default_currency_mode', mode);
+      setCurrencyMode(mode);
+      setCurrencyModalVisible(false);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update setting');
+    } finally {
+      setSettingLoading(false);
+    }
+  };
+
+  const getCurrencyModeLabel = (mode) => {
+    if (mode === 'ask') return 'Ask Every Time';
+    if (mode === 'INR') return 'Default to INR';
+    if (mode === 'AED') return 'Default to AED';
+    return mode;
+  };
+
+  const SettingItem = ({ icon, label, sublabel, onPress, color = colors.text, rightContent, disabled = false }) => (
     <TouchableOpacity style={[styles.item, disabled && { opacity: 0.5 }]} onPress={onPress} activeOpacity={0.7} disabled={disabled}>
       <View style={[styles.iconWrap, { backgroundColor: color + '15' }]}>
         <Ionicons name={icon} size={18} color={color} />
       </View>
-      <Text style={[styles.label, { color }]}>{label}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.label, { color }]}>{label}</Text>
+        {sublabel ? <Text style={styles.sublabel}>{sublabel}</Text> : null}
+      </View>
       {rightContent || <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />}
     </TouchableOpacity>
   );
+
 
   return (
     <AmbientBackground>
@@ -206,7 +271,27 @@ export default function SettingsScreen({ navigation, route }) {
               <SettingItem icon="key-outline" label="Change Password" onPress={() => navigation.navigate('Security', { type: 'password' })} />
               <View style={styles.divider} />
               <SettingItem icon="lock-closed-outline" label="Change PIN" onPress={() => navigation.navigate('Security', { type: 'pin' })} />
+              <View style={styles.divider} />
+              <SettingItem icon="list-outline" label="Manage Categories" onPress={() => navigation.navigate('CategoryManagement')} />
+              
+              {biometricsAvailable && (
+                <>
+                  <View style={styles.divider} />
+                  <SettingItem 
+                    icon="finger-print-outline" 
+                    label="Biometric Login" 
+                    sublabel={biometricsEnabled ? 'Enabled' : 'Disabled'}
+                    onPress={handleToggleBiometrics}
+                    rightContent={
+                       <View style={[styles.toggleTrack, biometricsEnabled && styles.toggleTrackActive]}>
+                          <View style={[styles.toggleThumb, biometricsEnabled && styles.toggleThumbActive]} />
+                       </View>
+                    }
+                  />
+                </>
+              )}
             </GlassCard>
+
           </FadeInView>
 
           <FadeInView delay={100}>
@@ -249,6 +334,19 @@ export default function SettingsScreen({ navigation, route }) {
             </GlassCard>
             <Text style={styles.hint}>Secure cloud backup via Firebase (No Google ID needed).</Text>
           </FadeInView>
+
+          <FadeInView delay={150}>
+            <Text style={[typography.sectionLabel, { marginTop: 20 }]}>ENTRY PREFERENCES</Text>
+            <GlassCard style={styles.group}>
+              <SettingItem 
+                icon="cash-outline" 
+                label="Default Currency Behavior" 
+                sublabel={getCurrencyModeLabel(currencyMode)}
+                onPress={() => setCurrencyModalVisible(true)} 
+              />
+            </GlassCard>
+          </FadeInView>
+
 
           <FadeInView delay={200}>
             <Text style={[typography.sectionLabel, { marginTop: 20 }]}>APP</Text>
@@ -306,7 +404,44 @@ export default function SettingsScreen({ navigation, route }) {
             </GlassCard>
           </View>
         </Modal>
+
+        {/* Currency Mode Selector Modal */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={currencyModalVisible}
+          onRequestClose={() => setCurrencyModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <GlassCard style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Default Currency Behavior</Text>
+              <Text style={styles.modalSub}>Choose how the currency is selected when adding a new transaction.</Text>
+              
+              <View style={styles.optionList}>
+                {['ask', 'INR', 'AED'].map((mode) => (
+                  <TouchableOpacity 
+                    key={mode} 
+                    style={[styles.optionBtn, currencyMode === mode && styles.optionBtnActive]} 
+                    onPress={() => handleCurrencyModeSelect(mode)}
+                  >
+                    <View style={styles.optionInfo}>
+                      <Text style={[styles.optionText, currencyMode === mode && styles.optionTextActive]}>
+                        {getCurrencyModeLabel(mode)}
+                      </Text>
+                    </View>
+                    {currencyMode === mode && <Ionicons name="checkmark-circle" size={20} color={colors.accentTeal} />}
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setCurrencyModalVisible(false)}>
+                <Text style={styles.cancelText}>Close</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
+        </Modal>
       </SafeAreaView>
+
     </AmbientBackground>
   );
 }
@@ -321,9 +456,11 @@ const styles = StyleSheet.create({
   group: { paddingVertical: 4, paddingHorizontal: 12, marginTop: 10 },
   item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   iconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  label: { ...typography.bodyMedium, flex: 1 },
+  label: { ...typography.bodyMedium },
+  sublabel: { ...typography.caption, color: colors.accentTeal, marginTop: 1 },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 46 },
-  hint: { ...typography.caption, color: colors.textMuted, marginTop: 8, marginLeft: 6 },
+  hint: { ...typography.caption, color: colors.textMuted, marginTop: 8, marginLeft: 6, marginBottom: 10 },
+
   syncMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4, marginLeft: 34 },
   syncTime: { ...typography.caption, color: colors.textMuted },
   userInfo: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: 4 },
@@ -340,4 +477,18 @@ const styles = StyleSheet.create({
   cancelBtn: { marginTop: 16, alignItems: 'center' },
   cancelText: { color: colors.textMuted },
   toggleText: { textAlign: 'center', marginTop: 16, color: colors.accentTeal, fontSize: 13 },
+
+  optionList: { marginTop: 10 },
+  optionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'transparent' },
+  optionBtnActive: { borderColor: colors.accentTeal + '50', backgroundColor: colors.accentTeal + '10' },
+  optionInfo: { flex: 1 },
+  optionText: { ...typography.bodyMedium, color: colors.textSecondary },
+  optionTextActive: { color: colors.text, fontWeight: '700' },
+
+  toggleTrack: { width: 36, height: 20, borderRadius: 10, backgroundColor: colors.border, padding: 2, justifyContent: 'center' },
+  toggleTrackActive: { backgroundColor: colors.accentTeal + '80' },
+  toggleThumb: { width: 16, height: 16, borderRadius: 8, backgroundColor: colors.textMuted },
+  toggleThumbActive: { backgroundColor: colors.accentTeal, transform: [{ translateX: 16 }] },
 });
+
+

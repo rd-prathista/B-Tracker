@@ -14,6 +14,7 @@ import ReportsScreen from '../screens/ReportsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SecurityScreen from '../screens/SecurityScreen';
 import AboutScreen from '../screens/AboutScreen';
+import CategoryManagementScreen from '../screens/CategoryManagementScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -83,6 +84,7 @@ export default function AppNavigator() {
             />
             <Stack.Screen name="Security" component={SecurityScreen} />
             <Stack.Screen name="About" component={AboutScreen} />
+            <Stack.Screen name="CategoryManagement" component={CategoryManagementScreen} />
           </>
         )}
       </Stack.Navigator>

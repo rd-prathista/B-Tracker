@@ -14,12 +14,15 @@ export const getAppDataAsJSON = () => {
   // We exclude the user table for security/re-auth purposes, 
   // or include it if we want full backup. Let's include everything for full restore.
   const users = db.getAllSync('SELECT * FROM users');
+  const investments = db.getAllSync('SELECT * FROM investments');
+  const goals = db.getAllSync('SELECT * FROM goals');
 
   return {
-    version: '1.0',
+    version: '1.1',
     timestamp: new Date().toISOString(),
-    data: { income, expenses, categories, users }
+    data: { income, expenses, categories, users, investments, goals }
   };
+
 };
 
 /**
@@ -61,6 +64,9 @@ export const importBackupData = async (backupJson) => {
   db.runSync('DELETE FROM income');
   db.runSync('DELETE FROM expenses');
   db.runSync('DELETE FROM categories');
+  db.runSync('DELETE FROM investments');
+  db.runSync('DELETE FROM goals');
+
 
   // Restore Categories
   data.categories.forEach(c => {
@@ -79,6 +85,23 @@ export const importBackupData = async (backupJson) => {
     db.runSync('INSERT INTO expenses (amount, currency, date, category, notes) VALUES (?, ?, ?, ?, ?)', 
       [e.amount, e.currency, e.date, e.category, e.notes]);
   });
+
+  // Restore Investments
+  if (data.investments) {
+    data.investments.forEach(i => {
+      db.runSync('INSERT INTO investments (amount, currency, date, category, notes) VALUES (?, ?, ?, ?, ?)', 
+        [i.amount, i.currency, i.date, i.category, i.notes]);
+    });
+  }
+
+  // Restore Goals
+  if (data.goals) {
+    data.goals.forEach(g => {
+      db.runSync('INSERT INTO goals (title, target_amount, current_amount, currency, target_date) VALUES (?, ?, ?, ?, ?)', 
+        [g.title, g.target_amount, g.current_amount, g.currency, g.target_date]);
+    });
+  }
+
 
   return true;
 };

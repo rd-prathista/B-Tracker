@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform, TextInput, LayoutAnimation, UIManager } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,7 +8,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getReportData, getCategoryTrends, getSavingsTrends } from '../services/transactionService';
+import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics } from '../services/transactionService';
+
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import FadeInView from '../components/FadeInView';
@@ -41,6 +43,11 @@ const monthName = (yyyyMM) => {
 };
 const formatDate = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+
 export default function ReportsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [currency, setCurrency] = useState('AED');
@@ -55,19 +62,30 @@ export default function ReportsScreen({ navigation }) {
   const [overviewData, setOverviewData] = useState({ totalIncome: 0, totalExpense: 0, savings: 0, breakdown: [] });
   const [categoryTrends, setCategoryTrends] = useState({});
   const [savingsTrends, setSavingsTrends] = useState({});
+  const [investmentData, setInvestmentData] = useState({ totalInvested: 0, breakdown: [], monthlyTrend: [] });
+
+
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
 
   const loadData = () => {
     if (activeTab === 'Overview') {
       const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
-      setOverviewData(getReportData(currency, start, end));
+      setOverviewData(getReportData(currency, start, end, searchQuery));
     } else if (activeTab === 'Expense') {
+
       setCategoryTrends(getCategoryTrends(currency));
     } else if (activeTab === 'Savings') {
       setSavingsTrends(getSavingsTrends());
+    } else if (activeTab === 'Invest') {
+      setInvestmentData(getInvestmentAnalytics(currency));
     }
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [activeTab, currency, dateFilter, customStart, customEnd]));
+
+  useFocusEffect(useCallback(() => { loadData(); }, [activeTab, currency, dateFilter, customStart, customEnd, searchQuery]));
+
 
   const accentColor = currency === 'AED' ? colors.primary : colors.accentTeal;
 
@@ -81,6 +99,15 @@ export default function ReportsScreen({ navigation }) {
     setShowCustomModal(false);
     loadData();
   };
+
+  const toggleSearch = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (showSearch) {
+      setSearchQuery('');
+    }
+    setShowSearch(!showSearch);
+  };
+
 
   const renderCurrencyToggle = () => (
     <View style={styles.currencyToggle}>
@@ -247,7 +274,63 @@ export default function ReportsScreen({ navigation }) {
         </View>
       </FadeInView>
     );
+  const renderInvestments = () => (
+    <FadeInView delay={0}>
+      <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
+      
+      <View style={{ paddingHorizontal: 18 }}>
+        <GlassCard style={styles.unifiedSummaryCard}>
+          <LinearGradient colors={[colors.accentIndigo + '10', 'transparent']} style={StyleSheet.absoluteFillObject} start={{x:0, y:0}} end={{x:1, y:1}} />
+          <View style={styles.usRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={[styles.usIconWrap, { backgroundColor: colors.accentIndigo + '20' }]}>
+                <Ionicons name="briefcase-outline" size={14} color={colors.accentIndigo} />
+              </View>
+              <Text style={styles.usLabel}>TOTAL INVESTED</Text>
+            </View>
+            <Text style={[styles.usVal, { color: colors.accentIndigo }]}>{currency} {fmt(investmentData.totalInvested)}</Text>
+          </View>
+        </GlassCard>
+
+        <Text style={[styles.sectionLabel, { marginTop: 20, marginBottom: 12 }]}>CATEGORY BREAKDOWN</Text>
+        {investmentData.breakdown.length === 0 ? (
+          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No investments found</Text></View>
+        ) : (
+          investmentData.breakdown.map((item, i) => {
+            const percentage = investmentData.totalInvested > 0 ? (item.total / investmentData.totalInvested) * 100 : 0;
+            return (
+              <View key={item.category} style={{ marginBottom: 15 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={styles.catNameText}>{item.category}</Text>
+                  <Text style={styles.catValText}>{currency} {fmt(item.total)} ({percentage.toFixed(0)}%)</Text>
+                </View>
+                <View style={styles.progressBarBg}>
+                  <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: colors.accentIndigo }]} />
+                </View>
+              </View>
+            );
+          })
+        )}
+
+        <Text style={[styles.sectionLabel, { marginTop: 20, marginBottom: 12 }]}>MONTHLY TREND</Text>
+        {investmentData.monthlyTrend.length === 0 ? (
+          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No trend data available</Text></View>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 20 }}>
+            {investmentData.monthlyTrend.map((m, i) => (
+              <GlassCard key={m.month} style={{ width: 110 }}>
+                <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 4 }}>{monthName(m.month)}</Text>
+                <Text style={{ ...typography.bodyMedium, fontWeight: '700' }}>{fmt(m.total)}</Text>
+              </GlassCard>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    </FadeInView>
+  );
+
   };
+
 
   return (
     <AmbientBackground>
@@ -256,13 +339,39 @@ export default function ReportsScreen({ navigation }) {
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
-          <Text style={styles.title}>Analytics</Text>
-          <View style={{ width: 36 }} />
+          
+          {!showSearch ? (
+            <>
+              <Text style={styles.title}>Analytics</Text>
+              <TouchableOpacity onPress={toggleSearch} style={styles.headerBtn}>
+                <Ionicons name="search" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={styles.searchBarContainer}>
+              <TextInput
+                style={styles.searchBarInput}
+                placeholder="Search reports..."
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+              <TouchableOpacity onPress={toggleSearch} style={styles.headerBtn}>
+                <Ionicons name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
+
         <View style={styles.tabsRow}>
-          {['Overview', 'Expense', 'Savings'].map(tab => (
-            <TouchableOpacity key={tab} style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]} onPress={() => setActiveTab(tab)}>
+          {['Overview', 'Expense', 'Savings', 'Invest'].map(tab => (
+            <TouchableOpacity 
+              key={tab} 
+              style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive, { flex: 1 }]} 
+              onPress={() => setActiveTab(tab)}
+            >
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
             </TouchableOpacity>
           ))}
@@ -272,7 +381,9 @@ export default function ReportsScreen({ navigation }) {
           {activeTab === 'Overview' && renderOverview()}
           {activeTab === 'Expense' && renderCategoryTrends()}
           {activeTab === 'Savings' && renderSavingsTrends()}
+          {activeTab === 'Invest' && renderInvestments()}
         </ScrollView>
+
 
         {/* Custom Date Modal */}
         <Modal visible={showCustomModal} transparent animationType="fade">
@@ -329,13 +440,25 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingTop: 8, paddingBottom: 14 },
   backBtn: { width: 36, height: 36, justifyContent: 'center' },
-  title: { ...typography.h2 },
+  headerBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  title: { ...typography.h2, flex: 1, marginLeft: 8 },
+
+  searchBarContainer: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.cardSolid, borderRadius: 12, paddingHorizontal: 12, marginLeft: 10, borderWidth: 1, borderColor: colors.border },
+  searchBarInput: { flex: 1, paddingVertical: 8, color: colors.text, fontSize: 14 },
+
   
   tabsRow: { flexDirection: 'row', paddingHorizontal: 18, marginBottom: 16, gap: 10 },
-  tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.border },
-  tabBtnActive: { backgroundColor: colors.border },
-  tabText: { ...typography.bodySmall, fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  tabBtn: { paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.border },
+  tabBtnActive: { backgroundColor: colors.border, borderColor: colors.primary + '40' },
+  tabText: { ...typography.bodySmall, fontFamily: 'Inter_600SemiBold', color: colors.textSecondary, fontSize: 11 },
   tabTextActive: { color: colors.text, fontFamily: 'Inter_700Bold' },
+  
+  sectionLabel: { ...typography.label, color: colors.textMuted, letterSpacing: 1 },
+  catNameText: { ...typography.bodySmall, fontWeight: '600' },
+  catValText: { ...typography.caption, color: colors.textSecondary },
+  progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' },
+  progressBarFill: { height: '100%', borderRadius: 3 },
+
 
   currencyToggle: { flexDirection: 'row', backgroundColor: colors.cardSolid, borderRadius: 10, padding: 3, borderWidth: 1, borderColor: colors.border },
   curBtn: { flex: 1, paddingVertical: 6, borderRadius: 7, alignItems: 'center' },

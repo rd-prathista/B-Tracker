@@ -3,13 +3,16 @@ import { View, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { colors } from '../theme/colors';
 
-export default function GlassCard({ children, style, intensity = 40 }) {
+export default function GlassCard({ children, style, contentStyle, intensity = 40, noPadding = false }) {
   return (
     <View style={[styles.container, style]}>
       <BlurView intensity={intensity} tint="dark" style={StyleSheet.absoluteFillObject} />
-      <View style={styles.content}>
+      <View style={[styles.content, noPadding && { padding: 0 }, contentStyle]}>
         {children}
       </View>
+
+
+
     </View>
   );
 }

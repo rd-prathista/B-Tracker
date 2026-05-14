@@ -12,6 +12,7 @@ import FadeInView from '../components/FadeInView';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import Toast from '../components/Toast';
+import { authenticateBiometrics, isBiometricsEnabledInSettings } from '../services/biometricService';
 
 export default function LoginScreen({ navigation, route }) {
   const [email, setEmail]       = useState('');
@@ -25,8 +26,37 @@ export default function LoginScreen({ navigation, route }) {
   const [pinError, setPinError]     = useState('');
   const [toastMsg, setToastMsg]     = useState('');
   const [toastVisible, setToastVisible] = useState(false);
+  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
+
 
   const showToast = (msg) => { setToastMsg(msg); setToastVisible(true); };
+
+  React.useEffect(() => {
+    const enabled = isBiometricsEnabledInSettings();
+    setIsBiometricEnabled(enabled);
+
+    const tryBiometrics = async () => {
+      if (enabled) {
+        const success = await authenticateBiometrics();
+        if (success) {
+          route.params?.onLoginSuccess?.();
+        }
+      }
+    };
+    
+    // Small delay to allow splash/fade-in to look better
+    const timer = setTimeout(tryBiometrics, 600);
+    return () => clearTimeout(timer);
+  }, []);
+
+
+  const handleBiometricAuth = async () => {
+    const success = await authenticateBiometrics();
+    if (success) {
+      route.params?.onLoginSuccess?.();
+    }
+  };
+
 
   const handleEmailLogin = async () => {
     setEmailError('');
@@ -136,11 +166,22 @@ export default function LoginScreen({ navigation, route }) {
               </GlassCard>
             </FadeInView>
 
-            <FadeInView delay={480}>
+            {isBiometricEnabled && (
+              <FadeInView delay={480}>
+                <TouchableOpacity onPress={handleBiometricAuth} style={styles.biometricBtn} activeOpacity={0.7}>
+                  <Ionicons name="finger-print" size={32} color={colors.primary} />
+                  <Text style={styles.biometricText}>Tap for Biometrics</Text>
+                </TouchableOpacity>
+              </FadeInView>
+            )}
+
+            <FadeInView delay={isBiometricEnabled ? 560 : 480}>
+
               <TouchableOpacity onPress={handleReset} style={styles.resetBtn} activeOpacity={0.6}>
                 <Text style={styles.resetText}>Register New Account (Reset Data)</Text>
               </TouchableOpacity>
             </FadeInView>
+
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -179,6 +220,10 @@ const styles = StyleSheet.create({
   orText:    { ...typography.sectionLabel, textAlign: 'center', marginVertical: 12 },
   errorText: { ...typography.bodySmall, color: colors.danger, marginBottom: 10, marginTop: -6 },
 
-  resetBtn:  { alignItems: 'center', marginTop: 28, padding: 8 },
+  resetBtn:  { alignItems: 'center', marginTop: 20, padding: 8 },
   resetText: { ...typography.buttonSecondary },
+
+  biometricBtn: { alignItems: 'center', marginTop: 12, gap: 8 },
+  biometricText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
 });
+

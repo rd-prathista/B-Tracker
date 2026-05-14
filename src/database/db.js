@@ -48,6 +48,8 @@ export const initDatabase = () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         theme TEXT DEFAULT 'dark',
         currency TEXT DEFAULT 'AED',
+        default_currency_mode TEXT DEFAULT 'AED',
+        biometrics_enabled INTEGER DEFAULT 0,
         last_sync_time TEXT
       );
     `);
@@ -63,6 +65,43 @@ export const initDatabase = () => {
     // Ensure users table has the new hashed columns
     try { db.execSync("ALTER TABLE users ADD COLUMN password_hash TEXT;"); } catch (e) {}
     try { db.execSync("ALTER TABLE users ADD COLUMN pin_hash TEXT;"); } catch (e) {}
+    try { db.execSync("ALTER TABLE app_settings ADD COLUMN default_currency_mode TEXT DEFAULT 'AED';"); } catch (e) {}
+    try { db.execSync("ALTER TABLE app_settings ADD COLUMN biometrics_enabled INTEGER DEFAULT 0;"); } catch (e) {}
+
+    // v3 migration (Investments & Goals)
+    try {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS investments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          amount REAL NOT NULL,
+          currency TEXT NOT NULL,
+          date TEXT NOT NULL,
+          category TEXT NOT NULL,
+          notes TEXT
+        );
+        CREATE TABLE IF NOT EXISTS goals (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          target_amount REAL NOT NULL,
+          current_amount REAL DEFAULT 0,
+          currency TEXT NOT NULL,
+          target_date TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      
+      // Add default investment categories
+      const invCats = ['SIP', 'Mutual Fund', 'Gold Scheme', 'LIC', 'Chit Fund'];
+      invCats.forEach(cat => {
+        db.runSync(
+          "INSERT OR IGNORE INTO categories (name, type, icon, is_custom) VALUES (?, 'investment', 'briefcase-outline', 0)",
+          [cat]
+        );
+      });
+    } catch (e) { console.log('v3 migration failed:', e); }
+
+
+
 
     // Restore correct icons for all default categories (safe upsert-style update)
     const iconUpdates = [
@@ -82,6 +121,19 @@ export const initDatabase = () => {
       ['Baby',         'happy-outline',            'expense'],
       ['Entertainment','game-controller-outline',  'expense'],
       ['Others',       'ellipse-outline',          'expense'],
+      ['SIP',           'trending-up-outline',     'investment'],
+      ['Mutual Fund',   'business-outline',        'investment'],
+      ['Gold Investment','medal-outline',          'investment'],
+      ['Fixed Deposit', 'lock-closed-outline',     'investment'],
+      ['LIC',           'shield-checkmark-outline','investment'],
+      ['Chit Fund',     'people-outline',          'investment'],
+      ['Stocks',        'bar-chart-outline',       'investment'],
+      ['Crypto',        'diamond-outline',         'investment'],
+      ['Retirement',    'sunny-outline',           'investment'],
+      ['Emergency Fund','umbrella-outline',        'investment'],
+      ['Real Estate',   'home-outline',            'investment'],
+      ['Child Savings', 'happy-outline',           'investment'],
+      ['Education Fund','school-outline',          'investment'],
     ];
     for (const [name, icon, type] of iconUpdates) {
       db.runSync(
@@ -116,8 +168,42 @@ export const initDatabase = () => {
         ('Bills',        'expense', 'receipt-outline',     0),
         ('Baby',         'expense', 'happy-outline',       0),
         ('Entertainment','expense', 'game-controller-outline', 0),
-        ('Others',       'expense', 'ellipse-outline',     0);
+        ('Others',       'expense', 'ellipse-outline',     0),
+        ('SIP',           'investment', 'trending-up-outline', 0),
+        ('Mutual Fund',   'investment', 'business-outline',    0),
+        ('Gold Investment','investment', 'medal-outline',      0),
+        ('Fixed Deposit', 'investment', 'lock-closed-outline', 0),
+        ('LIC',           'investment', 'shield-checkmark-outline', 0),
+        ('Chit Fund',     'investment', 'people-outline',      0),
+        ('Stocks',        'investment', 'bar-chart-outline',   0),
+        ('Crypto',        'investment', 'diamond-outline',     0),
+        ('Retirement',    'investment', 'sunny-outline',       0),
+        ('Emergency Fund','investment', 'umbrella-outline',    0),
+        ('Real Estate',   'investment', 'home-outline',        0),
+        ('Child Savings', 'investment', 'happy-outline',       0),
+        ('Education Fund','investment', 'school-outline',      0);
       `);
+    } else {
+      // Migration: Ensure default investment categories exist
+      console.log('Running Investment category migration...');
+      db.execSync(`
+        DELETE FROM categories WHERE type = 'investment' AND is_custom = 0;
+        INSERT INTO categories (name, type, icon, is_custom) VALUES 
+        ('SIP',           'investment', 'trending-up-outline', 0),
+        ('Mutual Fund',   'investment', 'business-outline',    0),
+        ('Gold Investment','investment', 'medal-outline',      0),
+        ('Fixed Deposit', 'investment', 'lock-closed-outline', 0),
+        ('LIC',           'investment', 'shield-checkmark-outline', 0),
+        ('Chit Fund',     'investment', 'people-outline',      0),
+        ('Stocks',        'investment', 'bar-chart-outline',   0),
+        ('Crypto',        'investment', 'diamond-outline',     0),
+        ('Retirement',    'investment', 'sunny-outline',       0),
+        ('Emergency Fund','investment', 'umbrella-outline',    0),
+        ('Real Estate',   'investment', 'home-outline',        0),
+        ('Child Savings', 'investment', 'happy-outline',       0),
+        ('Education Fund','investment', 'school-outline',      0);
+      `);
+      console.log('Migration complete.');
     }
 
     console.log("Database initialized successfully");
@@ -134,4 +220,38 @@ export const getAppSettings = () => {
   } catch (e) {
     return { theme: 'dark', currency: 'AED' };
   }
+};
+export const updateAppSettings = (key, value) => {
+  try {
+    const db = getDb();
+    db.runSync(`UPDATE app_settings SET ${key} = ?`, [value]);
+  } catch (e) {
+    console.error('Update settings error:', e);
+  }
+};
+
+/**
+ * GOALS CRUD
+ */
+export const getGoals = () => {
+  const db = getDb();
+  return db.getAllSync('SELECT * FROM goals ORDER BY created_at DESC');
+};
+
+export const addGoal = (title, target, currency, targetDate) => {
+  const db = getDb();
+  db.runSync(
+    'INSERT INTO goals (title, target_amount, currency, target_date) VALUES (?, ?, ?, ?)',
+    [title, parseFloat(target), currency, targetDate]
+  );
+};
+
+export const updateGoalProgress = (id, current) => {
+  const db = getDb();
+  db.runSync('UPDATE goals SET current_amount = ? WHERE id = ?', [parseFloat(current), id]);
+};
+
+export const deleteGoal = (id) => {
+  const db = getDb();
+  db.runSync('DELETE FROM goals WHERE id = ?', [id]);
 };
