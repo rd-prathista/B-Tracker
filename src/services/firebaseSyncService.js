@@ -24,20 +24,44 @@ export const firebaseEmailAuth = async (email, password, isRegistering = false) 
   if (!response.ok) throw new Error(data.error?.message || 'Authentication failed');
 
   await SecureStore.setItemAsync('firebase_id_token', data.idToken);
+  await SecureStore.setItemAsync('firebase_refresh_token', data.refreshToken);
   await SecureStore.setItemAsync('firebase_user_id', data.localId);
   await SecureStore.setItemAsync('firebase_user_email', email);
   return data.idToken;
 };
 
+export const refreshFirebaseToken = async () => {
+  const refreshToken = await SecureStore.getItemAsync('firebase_refresh_token');
+  if (!refreshToken) return null;
+  const FIREBASE_API_KEY = process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
+  const url = `https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=refresh_token&refresh_token=${refreshToken}`
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    await SecureStore.deleteItemAsync('firebase_id_token');
+    await SecureStore.deleteItemAsync('firebase_refresh_token');
+    return null;
+  }
+  await SecureStore.setItemAsync('firebase_id_token', data.id_token);
+  await SecureStore.setItemAsync('firebase_refresh_token', data.refresh_token);
+  return data.id_token;
+};
+
+
 /**
  * Upload local SQLite data to Firebase Firestore
  */
 export const uploadToFirebase = async () => {
-  const idToken = await SecureStore.getItemAsync('firebase_id_token');
+  const idToken = await refreshFirebaseToken();
   const userId = await SecureStore.getItemAsync('firebase_user_id');
   const email = await SecureStore.getItemAsync('firebase_user_email');
 
-  if (!idToken || !userId) throw new Error('You must be logged in to sync.');
+  if (!idToken || !userId) throw new Error('Session expired. Please logout and login again.');
+
 
   const appData = getAppDataAsJSON();
   const payload = {
@@ -72,10 +96,11 @@ export const uploadToFirebase = async () => {
  * Download data from Firebase Firestore
  */
 export const downloadFromFirebase = async () => {
-  const idToken = await SecureStore.getItemAsync('firebase_id_token');
+  const idToken = await refreshFirebaseToken();
   const userId = await SecureStore.getItemAsync('firebase_user_id');
 
-  if (!idToken || !userId) throw new Error('You must be logged in to restore.');
+  if (!idToken || !userId) throw new Error('Session expired. Please logout and login again.');
+
 
   const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/backups/${userId}`;
 
@@ -106,6 +131,8 @@ export const getLoggedInEmail = async () => {
 
 export const firebaseLogout = async () => {
   await SecureStore.deleteItemAsync('firebase_id_token');
+  await SecureStore.deleteItemAsync('firebase_refresh_token');
   await SecureStore.deleteItemAsync('firebase_user_id');
   await SecureStore.deleteItemAsync('firebase_user_email');
 };
+

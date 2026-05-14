@@ -63,6 +63,32 @@ export const initDatabase = () => {
     // Ensure users table has the new hashed columns
     try { db.execSync("ALTER TABLE users ADD COLUMN password_hash TEXT;"); } catch (e) {}
     try { db.execSync("ALTER TABLE users ADD COLUMN pin_hash TEXT;"); } catch (e) {}
+    try { db.execSync("ALTER TABLE app_settings ADD COLUMN default_currency_mode TEXT DEFAULT 'AED';"); } catch (e) {}
+    try { db.execSync("ALTER TABLE app_settings ADD COLUMN biometrics_enabled INTEGER DEFAULT 0;"); } catch (e) {}
+
+    // v3 migration (Investments & Goals) - Infrastructure only on main
+    try {
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS investments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          amount REAL NOT NULL,
+          currency TEXT NOT NULL,
+          date TEXT NOT NULL,
+          category TEXT NOT NULL,
+          notes TEXT
+        );
+        CREATE TABLE IF NOT EXISTS goals (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          target_amount REAL NOT NULL,
+          current_amount REAL DEFAULT 0,
+          currency TEXT NOT NULL,
+          target_date TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (e) {}
+
 
     // Restore correct icons for all default categories (safe upsert-style update)
     const iconUpdates = [
