@@ -58,7 +58,7 @@ export function DeleteTransactionConfirmModal({ visible, transaction, onClose, o
         <GlassCard style={styles.confirmCard}>
           <Text style={styles.confirmTitle}>Delete this entry?</Text>
           <Text style={styles.confirmBody}>
-            This will remove the {transaction.type === 'income' ? 'income' : 'expense'} record for{' '}
+            This will remove the {transaction.type === 'income' ? 'income' : transaction.type === 'investment' ? 'investment contribution' : 'expense'} record for{' '}
             <Text style={{ fontFamily: 'Inter_700Bold' }}>{transaction.category}</Text> ({transaction.currency}{' '}
             {fmt(transaction.amount)}). This cannot be undone.
           </Text>

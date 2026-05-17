@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments } from '../services/transactionService';
+import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment } from '../services/transactionService';
 
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
@@ -328,6 +328,24 @@ export default function ReportsScreen({ navigation }) {
       ]
     );
   };
+  const handleDeleteInvestment = (id, name) => {
+    Alert.alert(
+      'Delete Investment',
+      `Are you sure you want to permanently delete "${name}" and all its contribution history? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: () => {
+            deleteInvestment(id);
+            loadData();
+            Alert.alert('Success', `Investment "${name}" deleted successfully.`);
+          }
+        }
+      ]
+    );
+  };
 
   const renderInvestments = () => {
     let list = [];
@@ -478,7 +496,7 @@ export default function ReportsScreen({ navigation }) {
                         </View>
                       )}
 
-                      {/* Card Action Buttons (History & Add Invest) */}
+                      {/* Card Action Buttons (History, Delete & Add Invest) */}
                       <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                         <TouchableOpacity 
                           onPress={() => navigation.navigate('AllTransactions', { investmentId: inv.id })}
@@ -499,11 +517,30 @@ export default function ReportsScreen({ navigation }) {
                           <Text style={{ ...typography.bodySmall, color: colors.textSecondary, fontWeight: '700' }}>History</Text>
                         </TouchableOpacity>
 
+                        <TouchableOpacity 
+                          onPress={() => handleDeleteInvestment(inv.id, inv.name)}
+                          style={{ 
+                            flex: 1, 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            gap: 6, 
+                            backgroundColor: colors.cardSolid, 
+                            borderWidth: 1,
+                            borderColor: colors.danger + '40',
+                            paddingVertical: 8, 
+                            borderRadius: 8 
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                          <Text style={{ ...typography.bodySmall, color: colors.danger, fontWeight: '700' }}>Delete</Text>
+                        </TouchableOpacity>
+
                         {inv.status !== 'Completed' && inv.status !== 'Archived' && (
                           <TouchableOpacity 
                             onPress={() => navigation.navigate('AddTransaction', { type: 'investment', investmentId: inv.id, mode: 'contribution' })}
                             style={{ 
-                              flex: 1, 
+                              flex: 1.2, 
                               flexDirection: 'row', 
                               alignItems: 'center', 
                               justifyContent: 'center',

@@ -146,7 +146,11 @@ export const deleteContribution = (id) => {
   const newTotal = all.reduce((sum, c) => sum + c.amount, 0);
   const newCount = all.length;
   
-  db.runSync(`UPDATE investments SET total_invested = ?, installments_paid = ? WHERE id = ?`, [newTotal, newCount, invId]);
+  if (newCount === 0) {
+    db.runSync(`DELETE FROM investments WHERE id = ?`, [invId]);
+  } else {
+    db.runSync(`UPDATE investments SET total_invested = ?, installments_paid = ? WHERE id = ?`, [newTotal, newCount, invId]);
+  }
 };
 
 export const getInvestmentContributions = (investmentId) => {
@@ -369,12 +373,13 @@ export const getTransactionById = (type, id) => {
 
 export const deleteTransaction = (type, id) => {
   const db = getDb();
-  let table;
-  if (type === 'income') table = 'income';
-  else if (type === 'expense') table = 'expenses';
-  else return;
-
-  db.runSync(`DELETE FROM ${table} WHERE id = ?`, [id]);
+  if (type === 'income') {
+    db.runSync(`DELETE FROM income WHERE id = ?`, [id]);
+  } else if (type === 'expense') {
+    db.runSync(`DELETE FROM expenses WHERE id = ?`, [id]);
+  } else if (type === 'investment') {
+    deleteContribution(id);
+  }
 };
 
 export const getRecentTransactions = (limit = 8) => {

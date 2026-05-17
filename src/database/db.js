@@ -7,6 +7,7 @@ export const initDatabase = () => {
   try {
     db.execSync(`
       PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
       
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -292,6 +293,17 @@ export const initDatabase = () => {
       console.log("Performance indexes created successfully");
     } catch (e) {
       console.error("Failed to create speed indexes:", e);
+    }
+
+    // Clean up any orphaned legacy contributions (where master investment was deleted previously without Cascade)
+    try {
+      db.execSync(`
+        DELETE FROM investment_contributions 
+        WHERE investment_id NOT IN (SELECT id FROM investments);
+      `);
+      console.log("Orphaned legacy investment contributions purged successfully");
+    } catch (e) {
+      console.error("Failed to clean up orphaned contributions:", e);
     }
 
     console.log("Database initialized successfully");
