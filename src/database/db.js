@@ -56,29 +56,79 @@ export const initDatabase = () => {
 
     // --- Data Migrations (safe to run each time) ---
 
-    // Add currency column to income table if it doesn't exist
     try { db.execSync("ALTER TABLE income ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';"); } catch (e) {}
-    // Add currency column to expenses table if it doesn't exist
     try { db.execSync("ALTER TABLE expenses ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';"); } catch (e) {}
-    // Add icon column to categories if missing
     try { db.execSync("ALTER TABLE categories ADD COLUMN icon TEXT DEFAULT 'ellipse-outline';"); } catch (e) {}
-    // Ensure users table has the new hashed columns
     try { db.execSync("ALTER TABLE users ADD COLUMN password_hash TEXT;"); } catch (e) {}
     try { db.execSync("ALTER TABLE users ADD COLUMN pin_hash TEXT;"); } catch (e) {}
     try { db.execSync("ALTER TABLE app_settings ADD COLUMN default_currency_mode TEXT DEFAULT 'AED';"); } catch (e) {}
     try { db.execSync("ALTER TABLE app_settings ADD COLUMN biometrics_enabled INTEGER DEFAULT 0;"); } catch (e) {}
 
-    // v3 migration (Investments & Goals)
+    // Attachments & Archive migration
+    try { db.execSync("ALTER TABLE income ADD COLUMN attachment_uri TEXT;"); } catch (e) {}
+    try { db.execSync("ALTER TABLE expenses ADD COLUMN attachment_uri TEXT;"); } catch (e) {}
+    try { db.execSync("ALTER TABLE investment_contributions ADD COLUMN attachment_uri TEXT;"); } catch (e) {}
+    try { db.execSync("ALTER TABLE income ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
+    try { db.execSync("ALTER TABLE expenses ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
+    try { db.execSync("ALTER TABLE investment_contributions ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
+    // v3.1 migration (Advanced Investments)
     try {
+      try { db.execSync("ALTER TABLE investments RENAME TO investments_old;"); } catch (e) {}
+
       db.execSync(`
         CREATE TABLE IF NOT EXISTS investments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          type TEXT NOT NULL,
+          name TEXT NOT NULL,
+          currency TEXT NOT NULL,
+          recurring_amount REAL NOT NULL,
+          tenure_value INTEGER NOT NULL,
+          tenure_type TEXT NOT NULL, 
+          target_amount REAL,
+          installments_paid INTEGER DEFAULT 1,
+          total_invested REAL DEFAULT 0,
+          next_due_date TEXT,
+          status TEXT DEFAULT 'Active', 
+          start_date TEXT NOT NULL,
+          notes TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS investment_contributions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          investment_id INTEGER NOT NULL,
           amount REAL NOT NULL,
           currency TEXT NOT NULL,
-          date TEXT NOT NULL,
-          category TEXT NOT NULL,
-          notes TEXT
+          contribution_date TEXT NOT NULL,
+          notes TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
         );
+      `);
+
+      const oldExists = db.getAllSync("SELECT name FROM sqlite_master WHERE type='table' AND name='investments_old'");
+      if (oldExists.length > 0) {
+        const oldData = db.getAllSync("SELECT * FROM investments_old");
+        oldData.forEach(row => {
+          const result = db.runSync(
+            "INSERT INTO investments (type, name, currency, recurring_amount, tenure_value, tenure_type, total_invested, start_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [row.category, row.category, row.currency, row.amount, 1, 'Months', row.amount, row.date, row.notes]
+          );
+          const masterId = result.lastInsertRowId;
+          db.runSync(
+            "INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes) VALUES (?, ?, ?, ?, ?)",
+            [masterId, row.amount, row.currency, row.date, row.notes]
+          );
+        });
+        db.execSync("DROP TABLE IF EXISTS investments_old;");
+      }
+    } catch (e) { console.log('Investment migration failed:', e); }
+
+    try {
+
+      db.execSync(`
         CREATE TABLE IF NOT EXISTS goals (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           title TEXT NOT NULL,
@@ -86,24 +136,26 @@ export const initDatabase = () => {
           current_amount REAL DEFAULT 0,
           currency TEXT NOT NULL,
           target_date TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
       `);
-      
-      // Add default investment categories
-      const invCats = ['SIP', 'Mutual Fund', 'Gold Scheme', 'LIC', 'Chit Fund'];
-      invCats.forEach(cat => {
-        db.runSync(
-          "INSERT OR IGNORE INTO categories (name, type, icon, is_custom) VALUES (?, 'investment', 'briefcase-outline', 0)",
-          [cat]
+
+      db.execSync(`
+        CREATE TABLE IF NOT EXISTS reminders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT NOT NULL,
+          type TEXT NOT NULL,
+          amount REAL,
+          currency TEXT,
+          due_date TEXT NOT NULL,
+          repeat_type TEXT NOT NULL DEFAULT 'One Time',
+          enabled INTEGER DEFAULT 1,
+          linked_investment_id INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
-      });
-    } catch (e) { console.log('v3 migration failed:', e); }
+      `);
+    } catch (e) { console.log('Goals and reminders table creation failed:', e); }
 
-
-
-
-    // Restore correct icons for all default categories (safe upsert-style update)
     const iconUpdates = [
       ['Salary',       'briefcase-outline',       'income'],
       ['Freelance',    'laptop-outline',           'income'],
@@ -142,13 +194,11 @@ export const initDatabase = () => {
       );
     }
 
-    // Insert default settings if they don't exist
     const settingsResult = db.getAllSync('SELECT COUNT(*) as count FROM app_settings');
     if (settingsResult[0].count === 0) {
       db.execSync("INSERT INTO app_settings (theme, currency) VALUES ('dark', 'AED')");
     }
 
-    // Insert default categories if they don't exist
     const result = db.getAllSync('SELECT COUNT(*) as count FROM categories');
     if (result[0].count === 0) {
       db.execSync(`
@@ -184,8 +234,6 @@ export const initDatabase = () => {
         ('Education Fund','investment', 'school-outline',      0);
       `);
     } else {
-      // Migration: Ensure default investment categories exist
-      console.log('Running Investment category migration...');
       db.execSync(`
         DELETE FROM categories WHERE type = 'investment' AND is_custom = 0;
         INSERT INTO categories (name, type, icon, is_custom) VALUES 
@@ -203,7 +251,47 @@ export const initDatabase = () => {
         ('Child Savings', 'investment', 'happy-outline',       0),
         ('Education Fund','investment', 'school-outline',      0);
       `);
-      console.log('Migration complete.');
+    }
+
+    // Dev cleanup one-off trigger:
+    try {
+      db.execSync("ALTER TABLE app_settings ADD COLUMN dev_cleared INTEGER DEFAULT 0;");
+    } catch (e) {
+      // already exists or can't alter
+    }
+    
+    try {
+      const settings = db.getFirstSync("SELECT dev_cleared FROM app_settings");
+      if (settings && (!settings.dev_cleared || settings.dev_cleared < 2)) {
+        db.execSync("DELETE FROM income;");
+        db.execSync("DELETE FROM expenses;");
+        db.execSync("DELETE FROM investments;");
+        db.execSync("DELETE FROM investment_contributions;");
+        db.execSync("DELETE FROM reminders;");
+        db.execSync("DELETE FROM goals;");
+        db.execSync("UPDATE app_settings SET dev_cleared = 2;");
+        console.log("Dev environment entries cleared successfully!");
+      }
+    } catch (e) {
+      console.error("Failed to run dev clear one-off:", e);
+    }
+
+    // Database Speed Indexes for Reports, Dashboard and Filtering performance
+    try {
+      db.execSync(`
+        CREATE INDEX IF NOT EXISTS idx_income_currency_date ON income(currency, date);
+        CREATE INDEX IF NOT EXISTS idx_income_is_archived ON income(is_archived);
+        CREATE INDEX IF NOT EXISTS idx_expenses_currency_date ON expenses(currency, date);
+        CREATE INDEX IF NOT EXISTS idx_expenses_is_archived ON expenses(is_archived);
+        CREATE INDEX IF NOT EXISTS idx_investments_status ON investments(status);
+        CREATE INDEX IF NOT EXISTS idx_contributions_inv_id ON investment_contributions(investment_id);
+        CREATE INDEX IF NOT EXISTS idx_contributions_is_archived ON investment_contributions(is_archived);
+        CREATE INDEX IF NOT EXISTS idx_reminders_enabled ON reminders(enabled);
+        CREATE INDEX IF NOT EXISTS idx_categories_type_name ON categories(type, name);
+      `);
+      console.log("Performance indexes created successfully");
+    } catch (e) {
+      console.error("Failed to create speed indexes:", e);
     }
 
     console.log("Database initialized successfully");
@@ -230,9 +318,6 @@ export const updateAppSettings = (key, value) => {
   }
 };
 
-/**
- * GOALS CRUD
- */
 export const getGoals = () => {
   const db = getDb();
   return db.getAllSync('SELECT * FROM goals ORDER BY created_at DESC');

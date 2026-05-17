@@ -11,7 +11,8 @@ const fmt = (n) => parseFloat(n || 0).toLocaleString('en-US', { minimumFractionD
 export function TransactionActionModal({ visible, transaction, onClose, onEdit, onRequestDelete }) {
   if (!transaction) return null;
   const isIncome = transaction.type === 'income';
-  const accent = isIncome ? colors.success : colors.danger;
+  const isInvestment = transaction.type === 'investment';
+  const accent = colors.primary; // Consistent accent for Edit across types
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -20,7 +21,7 @@ export function TransactionActionModal({ visible, transaction, onClose, onEdit, 
         <GlassCard style={styles.sheetCard}>
           <Text style={styles.sheetTitle}>Transaction</Text>
           <Text style={styles.sheetMeta} numberOfLines={1}>
-            {isIncome ? 'Income' : 'Expense'} · {transaction.currency} {fmt(transaction.amount)}
+            {isIncome ? 'Income Entry' : isInvestment ? 'Investment Contribution' : 'Expense Entry'} · {transaction.currency} {fmt(transaction.amount)}
           </Text>
           <Text style={styles.sheetCat} numberOfLines={1}>
             {transaction.category}

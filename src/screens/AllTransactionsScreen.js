@@ -18,10 +18,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const fmt = (n) => parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (str) => new Date(str).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
-const formatModalDate = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-const getMonthLabel = (d) => new Date(d).toLocaleString('default', { month: 'long', year: 'numeric' });
+import { fmt, fmtDate, formatModalDate, getMonthLabel } from '../utils/formatters';
 
 const DATES = ['All Time', 'Custom', 'This Month', 'Last Month', '3 Months'];
 
@@ -51,12 +48,14 @@ const getDatesForFilter = (filter, customStart, customEnd) => {
   return { start: null, end: null };
 };
 
-export default function AllTransactionsScreen({ navigation }) {
+export default function AllTransactionsScreen({ navigation, route }) {
+  const { investmentId } = route.params || {};
   const [transactions, setTransactions] = useState([]);
 
-  const [type, setType] = useState('all');
+  const [type, setType] = useState(investmentId ? 'investment' : 'all');
   const [currency, setCurrency] = useState('all');
   const [dateFilter, setDateFilter] = useState('All Time');
+  const [archiveMode, setArchiveMode] = useState('Active');
 
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customStart, setCustomStart] = useState(new Date(new Date().setMonth(new Date().getMonth() - 1)));
@@ -80,12 +79,13 @@ export default function AllTransactionsScreen({ navigation }) {
       startDate: start,
       endDate: end,
       search: searchQuery,
+      investmentId,
+      archiveMode,
     };
     setTransactions(getTransactions(filters));
-
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [type, currency, dateFilter, customStart, customEnd, searchQuery]));
+  useFocusEffect(useCallback(() => { loadData(); }, [type, currency, dateFilter, customStart, customEnd, searchQuery, investmentId, archiveMode]));
 
 
   const handleFilterSelect = (f) => {
@@ -108,6 +108,7 @@ export default function AllTransactionsScreen({ navigation }) {
       }
       groups[monthStr].transactions.push(tx);
 
+      // Balance logic: income - (expense + investment)
       const val = tx.type === 'income' ? tx.amount : -tx.amount;
       if (tx.currency === 'AED') groups[monthStr].netAED += val;
       if (tx.currency === 'INR') groups[monthStr].netINR += val;
@@ -120,6 +121,7 @@ export default function AllTransactionsScreen({ navigation }) {
     if (!actionTx) return;
     const tx = actionTx;
     setActionTx(null);
+    // For now, contribution editing is simplified to AddTransaction
     navigation.navigate('AddTransaction', { type: tx.type, mode: 'edit', transactionId: tx.id });
   };
 
@@ -169,7 +171,7 @@ export default function AllTransactionsScreen({ navigation }) {
           
           {!showSearch ? (
             <>
-              <Text style={styles.title}>History</Text>
+              <Text style={styles.title}>{investmentId ? 'Investment Details' : 'History'}</Text>
               <TouchableOpacity onPress={toggleSearch} style={styles.headerBtn}>
                 <Ionicons name="search" size={22} color={colors.text} />
               </TouchableOpacity>
@@ -178,7 +180,7 @@ export default function AllTransactionsScreen({ navigation }) {
             <View style={styles.searchBarContainer}>
               <TextInput
                 style={styles.searchBarInput}
-                placeholder="Search history..."
+                placeholder="Search records..."
                 placeholderTextColor={colors.textMuted}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -194,17 +196,19 @@ export default function AllTransactionsScreen({ navigation }) {
 
         <View style={styles.filtersWrapper}>
           <View style={styles.filterRow}>
-            <View style={styles.segmentedCtrl}>
-              {['all', 'income', 'expense'].map((t) => (
-                <TouchableOpacity key={t} style={[styles.segBtn, type === t && styles.segBtnActive]} onPress={() => setType(t)}>
-                  <Text style={[styles.segText, type === t && styles.segTextActive]}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {!investmentId && (
+              <View style={[styles.segmentedCtrl, { flex: 1.4 }]}>
+                {['all', 'income', 'expense', 'investment'].map((t) => (
+                  <TouchableOpacity key={t} style={[styles.segBtn, type === t && styles.segBtnActive]} onPress={() => setType(t)}>
+                    <Text style={[styles.segText, type === t && styles.segTextActive]} numberOfLines={1}>
+                      {t === 'all' ? 'All' : t === 'income' ? 'Inc' : t === 'expense' ? 'Exp' : 'Inv'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
-            <View style={styles.segmentedCtrl}>
+            <View style={[styles.segmentedCtrl, investmentId && { flex: 1 }]}>
               {['all', 'AED', 'INR'].map((c) => (
                 <TouchableOpacity key={c} style={[styles.segBtn, currency === c && styles.segBtnActive]} onPress={() => setCurrency(c)}>
                   <Text style={[styles.segText, currency === c && styles.segTextActive]}>{c.toUpperCase()}</Text>
@@ -264,7 +268,10 @@ export default function AllTransactionsScreen({ navigation }) {
 
                 {group.transactions.map((tx, i) => {
                   const isIncome = tx.type === 'income';
+                  const isInvest = tx.type === 'investment';
                   const icon = tx.icon || 'ellipse-outline';
+                  const txColor = isIncome ? colors.success : isInvest ? colors.accentIndigo : colors.danger;
+                  
                   return (
                     <FadeInView key={`${tx.type}-${tx.id}`} delay={groupIndex * 100 + (i % 10) * 30}>
                       <View style={styles.txRow}>
@@ -273,8 +280,8 @@ export default function AllTransactionsScreen({ navigation }) {
                           onLongPress={() => openActions(tx)}
                           delayLongPress={380}
                         >
-                          <View style={[styles.txIcon, { backgroundColor: isIncome ? colors.success + '20' : colors.danger + '20' }]}>
-                            <Ionicons name={icon} size={17} color={isIncome ? colors.success : colors.danger} />
+                          <View style={[styles.txIcon, { backgroundColor: txColor + '20' }]}>
+                            <Ionicons name={icon} size={17} color={txColor} />
                           </View>
                           <View style={styles.txInfo}>
                             <Text style={styles.txCategory}>{tx.category}</Text>
@@ -284,7 +291,7 @@ export default function AllTransactionsScreen({ navigation }) {
                             </Text>
                           </View>
                           <Text
-                            style={[styles.txAmount, { color: isIncome ? colors.success : colors.danger }]}
+                            style={[styles.txAmount, { color: txColor }]}
                             numberOfLines={1}
                             adjustsFontSizeToFit
                           >

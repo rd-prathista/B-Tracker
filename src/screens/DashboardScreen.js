@@ -7,84 +7,41 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getDashboardBalances, getRecentTransactions, deleteTransaction } from '../services/transactionService';
-import { getGoals, addGoal, updateGoalProgress, deleteGoal } from '../database/db';
+import { getDashboardBalances, getRecentTransactions, deleteTransaction, getActiveInvestmentsSummary, getArchivableCount, archiveOldTransactions, getArchivableTransactions } from '../services/transactionService';
+import { getUpcomingReminders, addReminder, updateReminder, deleteReminder, toggleReminder } from '../services/reminderService';
 
 import FadeInView from '../components/FadeInView';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import { TransactionActionModal, DeleteTransactionConfirmModal } from '../components/TransactionMenus';
+import ReminderModal from '../components/ReminderModal';
+import { fmt, fmtDate } from '../utils/formatters';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const fmt = (n) => parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtDate = (s) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-
-const BalanceRow = ({ code, data, accent, isLast }) => (
-  <View style={[styles.balanceRow, !isLast && styles.borderBottom]}>
-    <View style={styles.balanceInfo}>
-      <Text style={styles.currencyCode}>{code}</Text>
-      <Text style={styles.balanceAmt}>{data.balance.toLocaleString()}</Text>
-    </View>
-    <View style={styles.balanceBreakdown}>
-      <View style={styles.breakdownItem}>
-        <Text style={[styles.breakdownLabel, { color: colors.success }]}>IN</Text>
-        <Text style={styles.breakdownValue}>{data.income.toLocaleString()}</Text>
-      </View>
-      <View style={styles.breakdownItem}>
-        <Text style={[styles.breakdownLabel, { color: colors.accentIndigo }]}>INV</Text>
-        <Text style={styles.breakdownValue}>{data.investment.toLocaleString()}</Text>
-      </View>
-      <View style={styles.breakdownItem}>
-        <Text style={[styles.breakdownLabel, { color: colors.danger }]}>OUT</Text>
-        <Text style={styles.breakdownValue}>{data.expense.toLocaleString()}</Text>
-      </View>
-    </View>
-  </View>
-);
-
-
-const GoalsList = ({ goals, onAdd, onUpdate, onDelete }) => {
-  if (goals.length === 0) {
-    return (
-      <GlassCard style={styles.emptyGoalCard}>
-        <Ionicons name="rocket-outline" size={32} color={colors.accentIndigo} style={{ marginBottom: 10 }} />
-        <Text style={styles.motivationText}>
-          "A goal without a plan is just a wish."
-        </Text>
-        <TouchableOpacity style={styles.addGoalBtnInline} onPress={onAdd}>
-          <Text style={styles.addGoalBtnText}>START YOUR FIRST GOAL</Text>
-        </TouchableOpacity>
-      </GlassCard>
-    );
-  }
-
+const BalanceRow = ({ code, data, isLast }) => {
   return (
-    <View style={styles.goalsContainer}>
-      {goals.map((goal, i) => {
-        const progress = Math.min(100, (goal.current_amount / goal.target_amount) * 100);
-        return (
-          <GlassCard key={goal.id} style={styles.goalCard} noPadding>
-            <TouchableOpacity 
-              activeOpacity={0.7} 
-              onLongPress={() => onDelete(goal)}
-              onPress={() => onUpdate(goal)}
-            >
-              <View style={styles.goalContent}>
-                <View style={styles.goalHeader}>
-                  <Text style={styles.goalTitle}>{goal.title}</Text>
-                  <Text style={styles.goalAmount}>{goal.currency} {goal.current_amount.toLocaleString()} / {goal.target_amount.toLocaleString()}</Text>
-                </View>
-                <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-                </View>
-              </View>
-            </TouchableOpacity>
-          </GlassCard>
-        );
-      })}
+    <View style={[styles.balanceRow, !isLast && styles.borderBottom]}>
+      <View style={styles.balanceInfo}>
+        <Text style={styles.currencyCode}>{code} CASH BALANCE</Text>
+        <Text style={styles.balanceAmt}>{fmt(data.balance)}</Text>
+      </View>
+      <View style={styles.balanceBreakdown}>
+        <View style={styles.breakdownItem}>
+          <Text style={[styles.breakdownLabel, { color: colors.success }]}>INCOME</Text>
+          <Text style={styles.breakdownValue}>{fmt(data.income)}</Text>
+        </View>
+        <View style={styles.breakdownItem}>
+          <Text style={[styles.breakdownLabel, { color: colors.danger }]}>EXPENSE</Text>
+          <Text style={styles.breakdownValue}>{fmt(data.expense)}</Text>
+        </View>
+        <View style={styles.breakdownItem}>
+          <Text style={[styles.breakdownLabel, { color: colors.accentIndigo }]}>INVESTED</Text>
+          <Text style={styles.breakdownValue}>{fmt(data.investment)}</Text>
+        </View>
+      </View>
     </View>
   );
 };
@@ -95,29 +52,31 @@ export default function DashboardScreen({ navigation }) {
     AED: { income: 0, expense: 0, investment: 0, balance: 0 },
     INR: { income: 0, expense: 0, investment: 0, balance: 0 },
   });
-  const [goals, setGoals] = useState([]);
   const [recentTx, setRecentTx] = useState([]);
-
+  const [activeInvestments, setActiveInvestments] = useState([]);
   const [hasData, setHasData] = useState(false);
 
   const [actionTx, setActionTx] = useState(null);
   const [deleteTx, setDeleteTx] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [showGoalModal, setShowGoalModal] = useState(false);
-  const [goalTitle, setGoalTitle] = useState('');
-  const [goalTarget, setGoalTarget] = useState('');
-  const [goalCurrency, setGoalCurrency] = useState('AED');
-  
-  const [updateGoal, setUpdateGoal] = useState(null);
-  const [goalCurrent, setGoalCurrent] = useState('');
+  const [reminders, setReminders] = useState([]);
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderToEdit, setReminderToEdit] = useState(null);
+
+  const [archivableCount, setArchivableCount] = useState(0);
+  const [showArchiveSuggestion, setShowArchiveSuggestion] = useState(true);
+  const [showArchivePreview, setShowArchivePreview] = useState(false);
+  const [previewArchiveData, setPreviewArchiveData] = useState(null);
 
 
   const loadData = () => {
     const b = getDashboardBalances();
     setBalances(b);
     setRecentTx(getRecentTransactions(2));
-    setGoals(getGoals());
+    setActiveInvestments(getActiveInvestmentsSummary());
+    setReminders(getUpcomingReminders());
+    setArchivableCount(getArchivableCount(6));
     setHasData(b.AED.income > 0 || b.AED.expense > 0 || b.AED.investment > 0 || b.INR.income > 0 || b.INR.expense > 0 || b.INR.investment > 0);
   };
 
@@ -131,37 +90,6 @@ export default function DashboardScreen({ navigation }) {
     const tx = actionTx;
     setActionTx(null);
     navigation.navigate('AddTransaction', { type: tx.type, mode: 'edit', transactionId: tx.id });
-  };
-
-  const handleAddGoal = () => {
-    if (!goalTitle || !goalTarget) return;
-    addGoal(goalTitle, goalTarget, goalCurrency);
-    setGoalTitle('');
-    setGoalTarget('');
-    setShowGoalModal(false);
-    loadData();
-  };
-
-  const handleUpdateGoal = () => {
-    if (!updateGoal || goalCurrent === '') return;
-    updateGoalProgress(updateGoal.id, goalCurrent);
-    setUpdateGoal(null);
-    setGoalCurrent('');
-    loadData();
-  };
-
-  const confirmDeleteGoal = (goal) => {
-    Alert.alert(
-      'Delete Goal',
-      `Are you sure you want to delete "${goal.title}"?`,
-      [
-        { text: 'Cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => {
-          deleteGoal(goal.id);
-          loadData();
-        }}
-      ]
-    );
   };
 
 
@@ -190,7 +118,33 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  const handleArchiveNow = () => {
+    const data = getArchivableTransactions(6);
+    setPreviewArchiveData(data);
+    setShowArchivePreview(true);
+  };
+
+  const confirmArchive = () => {
+    archiveOldTransactions(6);
+    setShowArchivePreview(false);
+    setShowArchiveSuggestion(false);
+    setPreviewArchiveData(null);
+    loadData();
+  };
+
+  const handleSaveReminder = (data) => {
+    if (data.id) updateReminder(data.id, data);
+    else addReminder(data);
+    loadData();
+  };
+
   const hasINR = balances.INR.income > 0 || balances.INR.expense > 0 || balances.INR.investment > 0;
+
+  const calculateDaysLeft = (dueDate) => {
+    const diff = new Date(dueDate).getTime() - new Date().getTime();
+    const days = Math.ceil(diff / (1000 * 3600 * 24));
+    return days < 0 ? 'Overdue' : days === 0 ? 'Today' : `In ${days} day${days > 1 ? 's' : ''}`;
+  };
 
   return (
     <AmbientBackground>
@@ -212,6 +166,25 @@ export default function DashboardScreen({ navigation }) {
               </View>
             </View>
           </FadeInView>
+
+          {false && (
+            <FadeInView delay={40}>
+              <View style={styles.archiveCard}>
+                <View style={styles.archiveHeader}>
+                  <Ionicons name="archive-outline" size={20} color={colors.accentIndigo} />
+                  <Text style={styles.archiveTitle}>You have {archivableCount} old entries eligible for archive</Text>
+                </View>
+                <View style={styles.archiveBtns}>
+                  <TouchableOpacity style={styles.archiveBtnNow} onPress={handleArchiveNow}>
+                    <Text style={styles.archiveBtnNowText}>Archive Now</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.archiveBtnLater} onPress={() => setShowArchiveSuggestion(false)}>
+                    <Text style={styles.archiveBtnLaterText}>Skip</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </FadeInView>
+          )}
 
           <FadeInView delay={80}>
             <View style={styles.buttonRow}>
@@ -264,32 +237,75 @@ export default function DashboardScreen({ navigation }) {
             <FadeInView delay={160}>
               <GlassCard style={styles.balanceCard}>
                 <View style={styles.balanceCardHeader}>
-                  <Text style={styles.balanceCardLabel}>BALANCES</Text>
+                  <Text style={styles.balanceCardLabel}>TOTAL BALANCES</Text>
                   <Ionicons name="stats-chart-outline" size={14} color={colors.textMuted} />
                 </View>
-                <BalanceRow code="AED" data={balances.AED} accent={colors.primary} isLast={!hasINR} />
-                <BalanceRow code="INR" data={balances.INR} accent={colors.accentTeal} isLast={true} />
+                <BalanceRow code="AED" data={balances.AED} isLast={!hasINR} />
+                {hasINR && <BalanceRow code="INR" data={balances.INR} isLast={true} />}
               </GlassCard>
             </FadeInView>
           )}
 
-          <FadeInView delay={200}>
-            <View style={styles.sectionRow}>
-              <Text style={styles.sectionLabel}>YOUR GOALS</Text>
-              <TouchableOpacity onPress={() => setShowGoalModal(true)}>
-                <Text style={styles.viewAll}>Add New</Text>
+          {false && (
+            <FadeInView delay={180}>
+              <View style={styles.sectionRow}>
+              <Text style={styles.sectionLabel}>UPCOMING REMINDERS</Text>
+              <TouchableOpacity onPress={() => { setReminderToEdit(null); setShowReminderModal(true); }}>
+                <Text style={styles.viewAllText}>+ Add</Text>
               </TouchableOpacity>
             </View>
-            <GoalsList 
-              goals={goals} 
-              onAdd={() => setShowGoalModal(true)}
-              onUpdate={(g) => {
-                setUpdateGoal(g);
-                setGoalCurrent(String(g.current_amount));
-              }}
-              onDelete={confirmDeleteGoal}
-            />
+            
+            {reminders.length === 0 ? (
+              <View style={[styles.emptyWrap, { marginTop: 0, marginBottom: 20 }]}>
+                <Text style={[typography.bodySmall, { color: colors.textMuted }]}>No upcoming reminders</Text>
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reminderScroll}>
+                {reminders.map(r => (
+                  <TouchableOpacity key={r.id} style={styles.reminderCard} onPress={() => { setReminderToEdit(r); setShowReminderModal(true); }}>
+                    <View style={styles.reminderHeader}>
+                      <Ionicons name="notifications-outline" size={14} color={colors.accentTeal} />
+                      <Text style={styles.reminderDays}>{calculateDaysLeft(r.due_date)}</Text>
+                    </View>
+                    <Text style={styles.reminderTitle} numberOfLines={1}>{r.title}</Text>
+                    <Text style={styles.reminderDate}>{fmtDate(r.due_date)} {r.amount ? `• ${r.currency} ${fmt(r.amount)}` : ''}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
           </FadeInView>
+          )}
+
+          {activeInvestments.length > 0 && (
+            <FadeInView delay={200}>
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionLabel}>INVESTMENT FOCUS</Text>
+              </View>
+              
+              <View style={{ gap: 2, marginBottom: 20, paddingHorizontal: 18 }}>
+                {activeInvestments.map((inv) => {
+                  const tenureMonths = inv.tenure_type === 'Years' ? inv.tenure_value * 12 : inv.tenure_value;
+                  const progress = Math.min(100, (inv.total_invested / (inv.target_amount || inv.total_invested || 1)) * 100);
+                  
+                  return (
+                    <View key={inv.id} style={styles.focusRow}>
+                      <View style={styles.focusRowHeader}>
+                        <View style={styles.focusDot} />
+                        <Text style={styles.focusRowName} numberOfLines={1}>{inv.name}</Text>
+                      </View>
+                      <View style={styles.focusRowData}>
+                        <Text style={styles.focusRowProgress}>
+                          {inv.currency} {fmt(inv.total_invested)} / {inv.target_amount ? fmt(inv.target_amount) : '---'}
+                          <Text style={styles.focusRowTenure}> · {inv.tenure_value} {inv.tenure_type}</Text>
+                        </Text>
+                        <Text style={styles.focusRowPercent}>{progress.toFixed(0)}%</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </FadeInView>
+          )}
 
 
           <FadeInView delay={240}>
@@ -307,7 +323,13 @@ export default function DashboardScreen({ navigation }) {
             ) : (
               recentTx.map((tx, i) => {
                 const isIncome = tx.type === 'income';
+                const isInvestment = tx.type === 'investment';
                 const icon = tx.icon || 'ellipse-outline';
+                
+                const txColor = isIncome ? colors.success : (isInvestment ? colors.accentIndigo : colors.danger);
+                const txBg = isIncome ? colors.success + '20' : (isInvestment ? colors.accentIndigo + '20' : colors.danger + '20');
+                const sign = isIncome ? '+' : (isInvestment ? '-' : '-');
+
                 return (
                   <FadeInView key={`${tx.type}-${tx.id}`} delay={280 + i * 60}>
                     <View style={styles.txRow}>
@@ -316,22 +338,24 @@ export default function DashboardScreen({ navigation }) {
                         onLongPress={() => openActions(tx)}
                         delayLongPress={380}
                       >
-                        <View style={[styles.txIcon, { backgroundColor: isIncome ? colors.success + '20' : colors.danger + '20' }]}>
-                          <Ionicons name={icon} size={15} color={isIncome ? colors.success : colors.danger} />
+                        <View style={[styles.txIcon, { backgroundColor: txBg }]}>
+                          <Ionicons name={icon} size={15} color={txColor} />
                         </View>
                         <View style={styles.txInfo}>
-                          <Text style={styles.txCategory}>{tx.category}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.txCategory}>{tx.category}</Text>
+                          </View>
                           <Text style={styles.txMeta}>
                             {fmtDate(tx.date)}
                             {tx.notes ? ` · ${tx.notes}` : ''}
                           </Text>
                         </View>
                         <Text
-                          style={[styles.txAmount, { color: isIncome ? colors.success : colors.danger }]}
+                          style={[styles.txAmount, { color: txColor }]}
                           numberOfLines={1}
                           adjustsFontSizeToFit
                         >
-                          {isIncome ? '+' : '-'}
+                          {sign}
                           {tx.currency} {fmt(tx.amount)}
                         </Text>
                       </Pressable>
@@ -351,91 +375,48 @@ export default function DashboardScreen({ navigation }) {
           </FadeInView>
         </ScrollView>
 
-        {/* Add Goal Modal */}
-        <Modal visible={showGoalModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <GlassCard style={styles.modalCard}>
-              <Text style={styles.modalTitle}>New Goal</Text>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Goal Title (e.g. New Car)" 
-                placeholderTextColor={colors.textMuted}
-                value={goalTitle}
-                onChangeText={setGoalTitle}
-              />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Target Amount" 
-                placeholderTextColor={colors.textMuted}
-                keyboardType="numeric"
-                value={goalTarget}
-                onChangeText={setGoalTarget}
-              />
-              <View style={styles.curSelectRow}>
-                {['AED', 'INR'].map(cur => (
-                  <TouchableOpacity 
-                    key={cur} 
-                    style={[styles.curOpt, goalCurrency === cur && styles.curOptActive]}
-                    onPress={() => setGoalCurrency(cur)}
-                  >
-                    <Text style={[styles.curOptText, goalCurrency === cur && styles.curOptTextActive]}>{cur}</Text>
-                  </TouchableOpacity>
+        <Modal visible={false} transparent animationType="fade" onRequestClose={() => setShowArchivePreview(false)}>
+          <View style={styles.overlay}>
+            <View style={styles.archiveModalCard}>
+              <Text style={styles.modalTitle}>Entries to Archive</Text>
+              <Text style={{ ...typography.bodySmall, color: colors.textSecondary, marginBottom: 8 }}>
+                These entries are older than 6 months and will be archived. They won't appear in default active reports.
+              </Text>
+              <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 10 }}>
+                {previewArchiveData?.length || 0} entries found
+              </Text>
+              
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator bounces={false}>
+                {previewArchiveData?.map((tx) => (
+                  <View key={`${tx.type}-${tx.id}`} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                    <Text style={{ ...typography.bodyMedium, color: colors.text }}>{fmtDate(tx.date)} - {tx.category}</Text>
+                    <Text style={{ ...typography.bodySmall, color: colors.textSecondary, marginTop: 4 }}>
+                      {tx.type.toUpperCase()} • {tx.currency} {fmt(tx.amount)}
+                    </Text>
+                  </View>
                 ))}
-              </View>
+              </ScrollView>
+
               <View style={styles.modalBtns}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowGoalModal(false)}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowArchivePreview(false)}>
                   <Text style={styles.cancelText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleAddGoal}>
-                  <Text style={styles.saveText}>Create Goal</Text>
+                <TouchableOpacity style={[styles.applyBtn, { backgroundColor: colors.accentTeal }]} onPress={confirmArchive}>
+                  <Text style={styles.applyText}>Confirm Archive</Text>
                 </TouchableOpacity>
               </View>
-            </GlassCard>
+            </View>
           </View>
         </Modal>
 
-        {/* Update Progress Modal */}
-        <Modal visible={updateGoal !== null} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <GlassCard style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Update Progress</Text>
-              <Text style={styles.modalSub}>Current savings for {updateGoal?.title}</Text>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Saved Amount" 
-                placeholderTextColor={colors.textMuted}
-                keyboardType="numeric"
-                value={goalCurrent}
-                onChangeText={setGoalCurrent}
-                autoFocus
-              />
-              <View style={styles.modalBtns}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setUpdateGoal(null)}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleUpdateGoal}>
-                  <Text style={styles.saveText}>Update</Text>
-                </TouchableOpacity>
-              </View>
-            </GlassCard>
-          </View>
-        </Modal>
-
-
-        <TransactionActionModal
-          visible={!!actionTx}
-          transaction={actionTx}
-          onClose={() => setActionTx(null)}
-          onEdit={editFromMenu}
-          onRequestDelete={requestDeleteFromMenu}
-        />
-
-        <DeleteTransactionConfirmModal
-          visible={!!deleteTx}
-          transaction={deleteTx}
-          onClose={cancelDelete}
-          onConfirm={confirmDelete}
-          deleting={deleting}
+        <TransactionActionModal visible={!!actionTx} transaction={actionTx} onClose={() => setActionTx(null)} onEdit={editFromMenu} onDelete={requestDeleteFromMenu} />
+        <DeleteTransactionConfirmModal visible={!!deleteTx} transaction={deleteTx} onClose={cancelDelete} onConfirm={confirmDelete} deleting={deleting} />
+        
+        <ReminderModal 
+          visible={showReminderModal} 
+          onClose={() => setShowReminderModal(false)} 
+          onSave={handleSaveReminder} 
+          reminderToEdit={reminderToEdit} 
         />
       </SafeAreaView>
     </AmbientBackground>
@@ -495,43 +476,38 @@ const styles = StyleSheet.create({
   breakdownLabel: { fontSize: 8, fontFamily: 'Inter_700Bold', marginBottom: 2 },
   breakdownValue: { ...typography.caption, color: colors.text, fontWeight: '600' },
 
-  goalsContainer: { paddingHorizontal: 18, marginBottom: 20 },
-  goalCard: { marginBottom: 10 },
-  goalContent: { padding: 16 },
-  goalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  goalTitle: { ...typography.bodyMedium, fontWeight: '700' },
-  goalAmount: { ...typography.caption, color: colors.textSecondary },
-  progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: colors.accentIndigo, borderRadius: 3 },
-
+  emptyWrap: { alignItems: 'center', justifyContent: 'center', padding: 40, marginTop: 20 },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, marginBottom: 12 },
+  sectionLabel: { ...typography.sectionLabel, marginBottom: 0 },
+  viewAllText: { ...typography.bodySmall, color: colors.accentTeal, fontWeight: 'bold' },
   viewAll: { ...typography.bodySmall, color: colors.primary, fontWeight: '700' },
 
-  emptyWrap: { alignItems: 'center', paddingVertical: 28 },
+  archiveCard: { marginHorizontal: 18, marginBottom: 16, backgroundColor: colors.accentIndigo + '10', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.accentIndigo + '30' },
+  archiveHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  archiveTitle: { ...typography.bodyMedium, color: colors.text, flex: 1, fontWeight: '600' },
+  archiveBtns: { flexDirection: 'row', gap: 10 },
+  archiveBtnNow: { flex: 1, backgroundColor: colors.accentIndigo, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  archiveBtnNowText: { ...typography.buttonPrimary, color: '#fff', fontSize: 13 },
+  archiveBtnLater: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', paddingVertical: 10, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  archiveBtnLaterText: { ...typography.buttonPrimary, color: colors.textMuted, fontSize: 13 },
+
+  reminderScroll: { paddingHorizontal: 18, paddingBottom: 20, gap: 12 },
+  reminderCard: { backgroundColor: colors.cardSolid, padding: 14, borderRadius: 16, width: 140, borderWidth: 1, borderColor: colors.border },
+  reminderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  reminderDays: { ...typography.caption, color: colors.accentTeal, fontWeight: 'bold' },
+  reminderTitle: { ...typography.bodyMedium, fontWeight: '600', marginBottom: 4 },
+  reminderDate: { ...typography.caption, color: colors.textMuted },
+
   emptyTx: { paddingVertical: 12, alignItems: 'center' },
-  sectionLabel: { ...typography.sectionLabel },
 
-  emptyGoalCard: { marginHorizontal: 18, padding: 24, alignItems: 'center', borderRadius: 20 },
-  motivationText: { ...typography.bodyMedium, fontStyle: 'italic', color: colors.textSecondary, textAlign: 'center', marginBottom: 18 },
-  addGoalBtnInline: { backgroundColor: colors.accentIndigo + '20', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.accentIndigo + '40' },
-  addGoalBtnText: { ...typography.caption, color: colors.accentIndigo, fontWeight: '700', letterSpacing: 0.5 },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
-  modalCard: { padding: 24, borderRadius: 24 },
-  modalTitle: { ...typography.h3, marginBottom: 12 },
-  modalSub: { ...typography.bodySmall, color: colors.textMuted, marginBottom: 15 },
-  input: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 14, color: colors.text, marginBottom: 12, borderWidth: 1, borderColor: colors.border },
-  curSelectRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  curOpt: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
-  curOptActive: { borderColor: colors.accentIndigo, backgroundColor: colors.accentIndigo + '20' },
-  curOptText: { ...typography.bodySmall, color: colors.textSecondary },
-  curOptTextActive: { color: colors.accentIndigo, fontWeight: '700' },
-  modalBtns: { flexDirection: 'row', gap: 10 },
-  cancelBtn: { flex: 1, padding: 14, alignItems: 'center' },
-  cancelText: { color: colors.textMuted },
-  saveBtn: { flex: 1, backgroundColor: colors.accentIndigo, padding: 14, borderRadius: 12, alignItems: 'center' },
-  saveText: { color: '#fff', fontWeight: '700' },
-
+  focusRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  focusRowHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  focusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentIndigo },
+  focusRowName: { fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.text, flex: 1 },
+  focusRowData: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingLeft: 14 },
+  focusRowProgress: { fontSize: 11, color: colors.textSecondary, fontFamily: 'Inter_500Medium' },
+  focusRowTenure: { color: colors.textMuted, fontSize: 10 },
+  focusRowPercent: { fontSize: 13, fontFamily: 'Inter_800ExtraBold', color: colors.accentIndigo },
 
   txRow: {
     flexDirection: 'row',
@@ -558,4 +534,14 @@ const styles = StyleSheet.create({
   txCategory: { ...typography.txCategory },
   txMeta: { ...typography.txMeta, marginTop: 1 },
   txAmount: { ...typography.txAmount },
+
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  archiveModalCard: { width: '100%', height: '70%', backgroundColor: colors.cardSolid, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: colors.border, flexDirection: 'column' },
+  modalCard: { width: '100%', padding: 20, borderRadius: 20 },
+  modalTitle: { ...typography.h3, marginBottom: 4 },
+  modalBtns: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  cancelBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', backgroundColor: colors.cardSolid, justifyContent: 'center' },
+  cancelText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
+  applyBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  applyText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

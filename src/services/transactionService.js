@@ -5,69 +5,159 @@ export const SUPPORTED_CURRENCIES = ['AED', 'INR'];
 /**
  * Add a new transaction (income or expense) with its own currency
  */
-export const addTransaction = (type, amount, currency, date, category, notes = '') => {
+export const addTransaction = (type, amount, currency, date, category, notes = '', attachmentUri = null) => {
   const db = getDb();
   let table;
   if (type === 'income') table = 'income';
   else if (type === 'expense') table = 'expenses';
-  else if (type === 'investment') table = 'investments';
   else return;
 
+  db.runSync(`INSERT INTO ${table} (amount, currency, date, category, notes, attachment_uri, is_archived) VALUES (?, ?, ?, ?, ?, ?, 0)`, [
+    parseFloat(amount),
+    currency,
+    date,
+    category,
+    notes,
+    attachmentUri
+  ]);
+};
+
+/**
+ * INVESTMENT MANAGEMENT (Advanced)
+ */
+
+export const getNextDueDate = (dateStr, tenureType) => {
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return null;
+
+  if (tenureType === 'Years') {
+    date.setFullYear(date.getFullYear() + 1);
+  } else {
+    // Months - Handle edge cases like Jan 31 -> Feb 28
+    const currentMonth = date.getMonth();
+    date.setMonth(currentMonth + 1);
+    if (date.getMonth() !== (currentMonth + 1) % 12) {
+      date.setDate(0); 
+    }
+  }
+  return date.toISOString().split('T')[0];
+};
+
+export const addInvestment = (data) => {
+  const { type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, start_date, notes } = data;
+  const db = getDb();
+  
+  const nextDue = getNextDueDate(start_date, tenure_type);
+  
+  // 1. Create Master Record
+  const result = db.runSync(
+    `INSERT INTO investments (type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, installments_paid, total_invested, next_due_date, start_date, notes) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+    [type, name, currency, parseFloat(recurring_amount), parseInt(tenure_value), tenure_type, target_amount ? parseFloat(target_amount) : null, parseFloat(recurring_amount), nextDue, start_date, notes]
+  );
+  
+  const masterId = result.lastInsertRowId;
+  
+  // 2. Add 1st Contribution
+  db.runSync(
+    `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes) VALUES (?, ?, ?, ?, ?)`,
+    [masterId, parseFloat(recurring_amount), currency, start_date, 'Initial Contribution']
+  );
+
+  return masterId;
+};
+
+export const addContribution = (investmentId, amount, date, notes = '', attachmentUri = null) => {
+  const db = getDb();
+  
+  // 1. Get current status
+  const master = db.getFirstSync(`SELECT * FROM investments WHERE id = ?`, [investmentId]);
+  if (!master) return;
+
+  // 2. Insert contribution
+  db.runSync(
+    `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+    [investmentId, parseFloat(amount), master.currency, date, notes, attachmentUri]
+  );
+
+  // 3. Update master record
+  const newCount = master.installments_paid + 1;
+  const newTotal = master.total_invested + parseFloat(amount);
+  const newNextDue = getNextDueDate(master.next_due_date || date, master.tenure_type);
+  
+  const tenureInMonths = master.tenure_type === 'Years' ? master.tenure_value * 12 : master.tenure_value;
+  const status = newCount >= tenureInMonths ? 'Completed' : 'Active';
 
   db.runSync(
-    `INSERT INTO ${table} (amount, currency, date, category, notes) VALUES (?, ?, ?, ?, ?)`,
-    [parseFloat(amount), currency, date, category, notes]
+    `UPDATE investments SET installments_paid = ?, total_invested = ?, next_due_date = ?, status = ? WHERE id = ?`,
+    [newCount, newTotal, newNextDue, status, investmentId]
   );
 };
 
-/**
- * Load one row by id (income or expense); includes `type` on the object.
- */
-export const getTransactionById = (type, id) => {
+export const updateContribution = (id, { amount, date, notes, attachmentUri, masterUpdates }) => {
   const db = getDb();
-  let table;
-  if (type === 'income') table = 'income';
-  else if (type === 'expense') table = 'expenses';
-  else if (type === 'investment') table = 'investments';
-  else return null;
+  const contribution = db.getFirstSync(`SELECT * FROM investment_contributions WHERE id = ?`, [id]);
+  if (!contribution) return;
 
-  const row = db.getFirstSync(`SELECT * FROM ${table} WHERE id = ?`, [id]);
-  if (!row) return null;
-  return { ...row, type };
+  const sets = [];
+  const params = [];
+  if (amount !== undefined) { sets.push('amount = ?'); params.push(parseFloat(amount)); }
+  if (date !== undefined) { sets.push('contribution_date = ?'); params.push(date); }
+  if (notes !== undefined) { sets.push('notes = ?'); params.push(notes); }
+  if (attachmentUri !== undefined) { sets.push('attachment_uri = ?'); params.push(attachmentUri); }
+
+  if (sets.length > 0) {
+    params.push(id);
+    db.runSync(`UPDATE investment_contributions SET ${sets.join(', ')} WHERE id = ?`, params);
+  }
+
+  // 2. Recalculate Master Total & Update Master Fields
+  const all = db.getAllSync(`SELECT amount FROM investment_contributions WHERE investment_id = ?`, [contribution.investment_id]);
+  const newTotal = all.reduce((sum, c) => sum + c.amount, 0);
+  
+  let mUpdateSql = 'total_invested = ?';
+  const mParams = [newTotal];
+
+  if (masterUpdates) {
+    const { name, category, tenure_value, tenure_type, target_amount } = masterUpdates;
+    if (name) { mUpdateSql += ', name = ?'; mParams.push(name); }
+    if (category) { mUpdateSql += ', type = ?'; mParams.push(category); }
+    if (tenure_value) { mUpdateSql += ', tenure_value = ?'; mParams.push(parseInt(tenure_value)); }
+    if (tenure_type) { mUpdateSql += ', tenure_type = ?'; mParams.push(tenure_type); }
+    if (target_amount !== undefined) { mUpdateSql += ', target_amount = ?'; mParams.push(target_amount ? parseFloat(target_amount) : null); }
+  }
+
+  mParams.push(contribution.investment_id);
+  db.runSync(`UPDATE investments SET ${mUpdateSql} WHERE id = ?`, mParams);
 };
 
-/**
- * Update an existing transaction row
- */
-export const updateTransaction = (type, id, { amount, currency, date, category, notes = '' }) => {
+export const deleteContribution = (id) => {
   const db = getDb();
-  let table;
-  if (type === 'income') table = 'income';
-  else if (type === 'expense') table = 'expenses';
-  else if (type === 'investment') table = 'investments';
-  else return;
+  const contribution = db.getFirstSync(`SELECT * FROM investment_contributions WHERE id = ?`, [id]);
+  if (!contribution) return;
 
-  db.runSync(
-    `UPDATE ${table} SET amount = ?, currency = ?, date = ?, category = ?, notes = ? WHERE id = ?`,
-    [parseFloat(amount), currency, date, category, notes, id]
+  const invId = contribution.investment_id;
+
+  // 1. Delete
+  db.runSync(`DELETE FROM investment_contributions WHERE id = ?`, [id]);
+
+  // 2. Recalculate Master
+  const all = db.getAllSync(`SELECT amount FROM investment_contributions WHERE investment_id = ?`, [invId]);
+  const newTotal = all.reduce((sum, c) => sum + c.amount, 0);
+  const newCount = all.length;
+  
+  db.runSync(`UPDATE investments SET total_invested = ?, installments_paid = ? WHERE id = ?`, [newTotal, newCount, invId]);
+};
+
+export const getInvestmentContributions = (investmentId) => {
+  const db = getDb();
+  return db.getAllSync(
+    `SELECT * FROM investment_contributions WHERE investment_id = ? ORDER BY contribution_date DESC`,
+    [investmentId]
   );
 };
 
-/**
- * Delete a transaction row
- */
-export const deleteTransaction = (type, id) => {
-  const db = getDb();
-  let table;
-  if (type === 'income') table = 'income';
-  else if (type === 'expense') table = 'expenses';
-  else if (type === 'investment') table = 'investments';
-  else return;
-
-  db.runSync(`DELETE FROM ${table} WHERE id = ?`, [id]);
-};
-
-const appendTransactionFilters = (alias) => {
+const appendTransactionFilters = (alias, dateField = 'date') => {
   let clause = '';
   const params = [];
   const add = (sql, ...vals) => {
@@ -83,387 +173,397 @@ const appendTransactionFilters = (alias) => {
     },
     withStartDate: (startDate) => {
       if (!startDate) return;
-      add(` AND ${alias}.date >= ?`, startDate);
+      add(` AND ${alias}.${dateField} >= ?`, startDate);
     },
     withEndDate: (endDate) => {
       if (!endDate) return;
-      add(` AND ${alias}.date <= ?`, endDate);
+      add(` AND ${alias}.${dateField} <= ?`, endDate);
+    },
+    withInvestmentId: (id) => {
+      if (!id) return;
+      add(` AND ${alias}.investment_id = ?`, id);
     },
     withSearch: (query) => {
       if (!query) return;
       const q = `%${query}%`;
-      add(` AND (${alias}.category LIKE ? OR ${alias}.notes LIKE ? OR CAST(${alias}.amount AS TEXT) LIKE ? OR ${alias}.currency LIKE ? OR strftime('%m', ${alias}.date) LIKE ? OR strftime('%B', ${alias}.date) LIKE ?)`, q, q, q, q, q, q);
-    }
+      const searchAlias = alias === 'ic' ? 'inv.name' : `${alias}.category`;
+      add(` AND (${searchAlias} LIKE ? OR ${alias}.notes LIKE ? OR CAST(${alias}.amount AS TEXT) LIKE ? OR ${alias}.currency LIKE ? OR strftime('%m', ${alias}.${dateField}) LIKE ? OR strftime('%B', ${alias}.${dateField}) LIKE ?)`, q, q, q, q, q, q);
+    },
+    withArchived: (archiveMode) => {
+      if (archiveMode === 'Archived') add(` AND ${alias}.is_archived = 1`);
+      else if (archiveMode === 'Active') add(` AND ${alias}.is_archived = 0`);
+    },
   };
 };
 
+export const updateTransaction = (type, id, data) => {
+  const db = getDb();
+  let table = type === 'income' ? 'income' : type === 'expense' ? 'expenses' : 'investment_contributions';
+  
+  const sets = [];
+  const params = [];
+  if (data.amount !== undefined) { sets.push('amount = ?'); params.push(parseFloat(data.amount)); }
+  if (data.currency) { sets.push('currency = ?'); params.push(data.currency); }
+  if (data.date) { sets.push('date = ?'); params.push(data.date); }
+  if (data.category) { sets.push('category = ?'); params.push(data.category); }
+  if (data.notes !== undefined) { sets.push('notes = ?'); params.push(data.notes); }
+  if (data.attachmentUri !== undefined) { sets.push('attachment_uri = ?'); params.push(data.attachmentUri); }
 
-/**
- * Get transactions (with optional filters). Each row includes `icon` from `categories` when matched.
- */
-export const getRecentTransactions = (limit = 8) => {
-  return getTransactions({ limit });
+  if (sets.length === 0) return;
+  params.push(id);
+  db.runSync(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`, params);
 };
 
 export const getTransactions = (filters = {}) => {
-  const { limit = 100, currency, type, startDate, endDate, search } = filters;
+  const { limit = 100, currency, type, startDate, endDate, search, investmentId, archiveMode = 'Active' } = filters;
   const db = getDb();
 
   let income = [];
   let expenses = [];
   let investments = [];
 
-
-  if (!type || type === 'income') {
+  if ((!type || type === 'income') && !investmentId) {
     const b = appendTransactionFilters('i');
     b.withCurrency(currency);
     b.withStartDate(startDate);
     b.withEndDate(endDate);
     b.withSearch(search);
-
-    const incomeQuery =
-      `SELECT i.id, i.amount, i.currency, i.date, i.category, i.notes, 'income' as type, ` +
-      `COALESCE(NULLIF(TRIM(c.icon), ''), 'ellipse-outline') as icon ` +
-      `FROM income i ` +
-      `LEFT JOIN categories c ON i.category = c.name AND c.type = 'income' ` +
-      `WHERE 1=1${b.clause()}`;
-    income = db.getAllSync(incomeQuery, b.paramList());
+    b.withArchived(archiveMode);
+    const q = `SELECT i.id, i.amount, i.currency, i.date, i.category, i.notes, i.attachment_uri, i.is_archived, 'income' as type, COALESCE(c.icon, 'ellipse-outline') as icon 
+               FROM income i LEFT JOIN categories c ON i.category = c.name AND c.type = 'income' WHERE 1=1${b.clause()}`;
+    income = db.getAllSync(q, b.paramList());
   }
 
-  if (!type || type === 'expense') {
+  if ((!type || type === 'expense') && !investmentId) {
     const b = appendTransactionFilters('e');
     b.withCurrency(currency);
     b.withStartDate(startDate);
     b.withEndDate(endDate);
     b.withSearch(search);
-
-    const expenseQuery =
-      `SELECT e.id, e.amount, e.currency, e.date, e.category, e.notes, 'expense' as type, ` +
-      `COALESCE(NULLIF(TRIM(c.icon), ''), 'ellipse-outline') as icon ` +
-      `FROM expenses e ` +
-      `LEFT JOIN categories c ON e.category = c.name AND c.type = 'expense' ` +
-      `WHERE 1=1${b.clause()}`;
-    expenses = db.getAllSync(expenseQuery, b.paramList());
+    b.withArchived(archiveMode);
+    const q = `SELECT e.id, e.amount, e.currency, e.date, e.category, e.notes, e.attachment_uri, e.is_archived, 'expense' as type, COALESCE(c.icon, 'ellipse-outline') as icon 
+               FROM expenses e LEFT JOIN categories c ON e.category = c.name AND c.type = 'expense' WHERE 1=1${b.clause()}`;
+    expenses = db.getAllSync(q, b.paramList());
   }
 
-  if (!type || type === 'investment') {
-    const b = appendTransactionFilters('inv');
+  if (!type || type === 'investment' || investmentId) {
+    const b = appendTransactionFilters('ic', 'contribution_date');
     b.withCurrency(currency);
     b.withStartDate(startDate);
     b.withEndDate(endDate);
     b.withSearch(search);
-
-    const invQuery =
-      `SELECT inv.id, inv.amount, inv.currency, inv.date, inv.category, inv.notes, 'investment' as type, ` +
-      `COALESCE(NULLIF(TRIM(c.icon), ''), 'briefcase-outline') as icon ` +
-      `FROM investments inv ` +
-      `LEFT JOIN categories c ON inv.category = c.name AND c.type = 'investment' ` +
-      `WHERE 1=1${b.clause()}`;
-    investments = db.getAllSync(invQuery, b.paramList());
+    b.withInvestmentId(investmentId);
+    b.withArchived(archiveMode);
+    
+    const q = `SELECT ic.id, ic.amount, ic.currency, ic.contribution_date as date, inv.name as category, ic.notes, ic.attachment_uri, ic.is_archived, 'investment' as type, COALESCE(cat.icon, 'briefcase-outline') as icon 
+               FROM investment_contributions ic 
+               JOIN investments inv ON ic.investment_id = inv.id 
+               LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
+               WHERE 1=1${b.clause()}`;
+    investments = db.getAllSync(q, b.paramList());
   }
 
   return [...income, ...expenses, ...investments]
-
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, limit);
 };
 
-/**
- * Calculate Dashboard Balances — separately for AED and INR
- */
 export const getDashboardBalances = () => {
   const db = getDb();
-
   const getByCode = (code) => {
-    const incomeRes = db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ?`, [code]);
-    const totalIncome = incomeRes?.total || 0;
-
-    const expenseRes = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ?`, [code]);
-    const totalExpense = expenseRes?.total || 0;
-
-    const invRes = db.getFirstSync(`SELECT SUM(amount) as total FROM investments WHERE currency = ?`, [code]);
-    const totalInvestment = invRes?.total || 0;
-
+    const income = db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
+    const expense = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
+    const investment = db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
+    
     return { 
-      income: totalIncome, 
-      expense: totalExpense, 
-      investment: totalInvestment, 
-      balance: totalIncome - totalExpense - totalInvestment 
+      income, 
+      expense, 
+      investment, 
+      balance: income - expense - investment 
     };
   };
+  return { AED: getByCode('AED'), INR: getByCode('INR') };
+};
+
+export const getActiveInvestmentsSummary = () => {
+  const db = getDb();
+  return db.getAllSync(`
+    SELECT * FROM investments 
+    WHERE status = 'Active' 
+    ORDER BY created_at DESC
+  `);
+};
+
+export const getInvestmentAnalytics = (currency) => {
+  const db = getDb();
+  
+  const activeInvestments = db.getAllSync(
+    `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
+     FROM investments inv 
+     LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
+     WHERE inv.currency = ? AND (inv.status = 'Active' OR inv.status IS NULL) ORDER BY inv.created_at DESC`,
+    [currency]
+  );
+
+  const completedInvestments = db.getAllSync(
+    `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
+     FROM investments inv 
+     LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
+     WHERE inv.currency = ? AND inv.status = 'Completed' ORDER BY inv.created_at DESC`,
+    [currency]
+  );
+
+  const archivedInvestments = db.getAllSync(
+    `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
+     FROM investments inv 
+     LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
+     WHERE inv.currency = ? AND inv.status = 'Archived' ORDER BY inv.created_at DESC`,
+    [currency]
+  );
+
+  const totalInvested = db.getFirstSync(
+    `SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ?`,
+    [currency]
+  )?.total || 0;
 
   return {
-    AED: getByCode('AED'),
-    INR: getByCode('INR'),
+    activeInvestments,
+    completedInvestments,
+    archivedInvestments,
+    totalInvested
   };
 };
 
+export const archiveInvestment = (id) => {
+  const db = getDb();
+  db.runSync(`UPDATE investments SET status = 'Archived' WHERE id = ?`, [id]);
+};
 
-/**
- * Get categories by type — returns { name, icon }
- */
+export const deleteInvestment = (id) => {
+  const db = getDb();
+  db.runSync(`DELETE FROM investments WHERE id = ?`, [id]);
+  db.runSync(`DELETE FROM investment_contributions WHERE investment_id = ?`, [id]);
+};
+
+export const clearAllInvestments = () => {
+  const db = getDb();
+  db.runSync(`DELETE FROM investment_contributions`);
+  db.runSync(`DELETE FROM investments`);
+};
+
+export const getInvestments = (status = 'Active') => {
+  const db = getDb();
+  if (status === 'All') {
+    return db.getAllSync(`SELECT * FROM investments ORDER BY name ASC`);
+  }
+  return db.getAllSync(`SELECT * FROM investments WHERE status = ? ORDER BY name ASC`, [status]);
+};
+
+export const getTransactionById = (type, id) => {
+  const db = getDb();
+  let table = type === 'income' ? 'income' : type === 'expense' ? 'expenses' : 'investment_contributions';
+  const row = db.getFirstSync(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+  if (!row) return null;
+  return { ...row, type };
+};
+
+export const deleteTransaction = (type, id) => {
+  const db = getDb();
+  let table;
+  if (type === 'income') table = 'income';
+  else if (type === 'expense') table = 'expenses';
+  else return;
+
+  db.runSync(`DELETE FROM ${table} WHERE id = ?`, [id]);
+};
+
+export const getRecentTransactions = (limit = 8) => {
+  return getTransactions({ limit });
+};
+
 export const getCategories = (type) => {
   const db = getDb();
   return db.getAllSync('SELECT id, name, icon FROM categories WHERE type = ? ORDER BY is_custom ASC, name ASC', [type]);
 };
 
-/**
- * Add a new custom category with an icon
- */
 export const addCategory = (name, type, icon = 'ellipse-outline') => {
   const db = getDb();
   const trimmed = name.trim();
   if (!trimmed) throw new Error('Category name cannot be empty');
-
   const existing = db.getFirstSync('SELECT id FROM categories WHERE name = ? AND type = ?', [trimmed, type]);
   if (existing) throw new Error(`Category "${trimmed}" already exists`);
-
   db.runSync('INSERT INTO categories (name, type, icon, is_custom) VALUES (?, ?, ?, 1)', [trimmed, type, icon]);
 };
 
-/**
- * Get category usage — returns count and total sum of transactions
- */
 export const getCategoryUsage = (name, type) => {
   const db = getDb();
   const table = type === 'income' ? 'income' : 'expenses';
-  
-  // If 'investment' or other future types, we don't have tables yet
   if (type !== 'income' && type !== 'expense') return { count: 0, total: 0 };
-
-  const res = db.getFirstSync(
-    `SELECT COUNT(*) as count, SUM(amount) as total FROM ${table} WHERE category = ?`,
-    [name]
-  );
+  const res = db.getFirstSync(`SELECT COUNT(*) as count, SUM(amount) as total FROM ${table} WHERE category = ?`, [name]);
   return { count: res?.count || 0, total: res?.total || 0 };
 };
 
-/**
- * Get all transactions for a specific category
- */
 export const getCategoryTransactions = (name, type) => {
   const db = getDb();
   const table = type === 'income' ? 'income' : 'expenses';
-  
   if (type !== 'income' && type !== 'expense') return [];
-
-  return db.getAllSync(
-    `SELECT *, '${type}' as type FROM ${table} WHERE category = ? ORDER BY date DESC`,
-    [name]
-  );
+  return db.getAllSync(`SELECT *, '${type}' as type FROM ${table} WHERE category = ? ORDER BY date DESC`, [name]);
 };
 
-/**
- * Reassign a single transaction to a new category
- */
 export const reassignTransactionCategory = (type, transactionId, newCategory) => {
   const db = getDb();
   const table = type === 'income' ? 'income' : 'expenses';
   db.runSync(`UPDATE ${table} SET category = ? WHERE id = ?`, [newCategory, transactionId]);
 };
 
-/**
- * Bulk reassign all transactions from one category to another
- */
 export const bulkReassignCategory = (type, oldCategory, newCategory) => {
   const db = getDb();
   const table = type === 'income' ? 'income' : 'expenses';
   db.runSync(`UPDATE ${table} SET category = ? WHERE category = ?`, [newCategory, oldCategory]);
 };
 
-/**
- * Safely delete a category by its ID
- */
 export const safeDeleteCategory = (id) => {
   const db = getDb();
   db.runSync('DELETE FROM categories WHERE id = ?', [id]);
 };
 
-/**
- * Update category name and icon. 
- * If name changes, it updates all linked transactions to maintain history.
- */
 export const updateCategory = (id, oldName, newName, type, icon) => {
   const db = getDb();
   const trimmedNew = newName.trim();
   if (!trimmedNew) throw new Error('Category name cannot be empty');
-
-  // Check for duplicate names (excluding itself)
-  const existing = db.getFirstSync(
-    'SELECT id FROM categories WHERE name = ? AND type = ? AND id != ?',
-    [trimmedNew, type, id]
-  );
+  const existing = db.getFirstSync('SELECT id FROM categories WHERE name = ? AND type = ? AND id != ?', [trimmedNew, type, id]);
   if (existing) throw new Error(`Category "${trimmedNew}" already exists`);
-
-  // Update category table
-  db.runSync(
-    'UPDATE categories SET name = ?, icon = ? WHERE id = ?',
-    [trimmedNew, icon, id]
-  );
-
-  // If name changed, update transaction tables
+  db.runSync('UPDATE categories SET name = ?, icon = ? WHERE id = ?', [trimmedNew, icon, id]);
   if (trimmedNew !== oldName) {
-    if (type === 'income') {
-      db.runSync('UPDATE income SET category = ? WHERE category = ?', [trimmedNew, oldName]);
-    } else if (type === 'expense') {
-      db.runSync('UPDATE expenses SET category = ? WHERE category = ?', [trimmedNew, oldName]);
-    }
+    if (type === 'income') db.runSync('UPDATE income SET category = ? WHERE category = ?', [trimmedNew, oldName]);
+    else if (type === 'expense') db.runSync('UPDATE expenses SET category = ? WHERE category = ?', [trimmedNew, oldName]);
   }
 };
 
-/**
- * Get report data (Totals and Category Breakdown) for a specific currency and date range
- */
-export const getReportData = (currency, startDate, endDate, search) => {
+export const getArchivableCount = (monthsAgo = 6) => {
+  const db = getDb();
+  const dateLimit = new Date();
+  dateLimit.setMonth(dateLimit.getMonth() - monthsAgo);
+  const isoLimit = dateLimit.toISOString().split('T')[0];
+
+  const incomeCount = db.getFirstSync(`SELECT COUNT(*) as count FROM income WHERE is_archived = 0 AND date < ?`, [isoLimit])?.count || 0;
+  const expenseCount = db.getFirstSync(`SELECT COUNT(*) as count FROM expenses WHERE is_archived = 0 AND date < ?`, [isoLimit])?.count || 0;
+  const invCount = db.getFirstSync(`SELECT COUNT(*) as count FROM investment_contributions WHERE is_archived = 0 AND contribution_date < ?`, [isoLimit])?.count || 0;
+
+  return incomeCount + expenseCount + invCount;
+};
+
+export const getArchivableTransactions = (monthsAgo = 6) => {
+  const db = getDb();
+  const dateLimit = new Date();
+  dateLimit.setMonth(dateLimit.getMonth() - monthsAgo);
+  const isoLimit = dateLimit.toISOString().split('T')[0];
+
+  const income = db.getAllSync(`SELECT id, amount, currency, date, category, notes, 'income' as type FROM income WHERE is_archived = 0 AND date < ?`, [isoLimit]);
+  const expenses = db.getAllSync(`SELECT id, amount, currency, date, category, notes, 'expense' as type FROM expenses WHERE is_archived = 0 AND date < ?`, [isoLimit]);
+  
+  const investRows = db.getAllSync(`
+    SELECT ic.id, ic.amount, ic.currency, ic.contribution_date as date, inv.name as category, ic.notes, 'investment' as type 
+    FROM investment_contributions ic
+    JOIN investments inv ON ic.investment_id = inv.id
+    WHERE ic.is_archived = 0 AND ic.contribution_date < ?
+  `, [isoLimit]);
+
+  return [...income, ...expenses, ...investRows].sort((a, b) => new Date(b.date) - new Date(a.date));
+};
+
+export const archiveOldTransactions = (monthsAgo = 6) => {
+  const db = getDb();
+  const dateLimit = new Date();
+  dateLimit.setMonth(dateLimit.getMonth() - monthsAgo);
+  const isoLimit = dateLimit.toISOString().split('T')[0];
+
+  db.runSync(`UPDATE income SET is_archived = 1 WHERE is_archived = 0 AND date < ?`, [isoLimit]);
+  db.runSync(`UPDATE expenses SET is_archived = 1 WHERE is_archived = 0 AND date < ?`, [isoLimit]);
+  db.runSync(`UPDATE investment_contributions SET is_archived = 1 WHERE is_archived = 0 AND contribution_date < ?`, [isoLimit]);
+};
+
+export const toggleArchiveStatus = (type, id, isArchived) => {
+  const db = getDb();
+  let table = type === 'income' ? 'income' : type === 'expense' ? 'expenses' : 'investment_contributions';
+  db.runSync(`UPDATE ${table} SET is_archived = ? WHERE id = ?`, [isArchived ? 1 : 0, id]);
+};
+
+export const getReportData = (currency, startDate, endDate, search, archiveMode = 'Active') => {
   const db = getDb();
   const baseParams = [currency, startDate, endDate];
   let searchClause = '';
   let searchParams = [];
-  
   if (search) {
     const q = `%${search}%`;
     searchClause = ` AND (category LIKE ? OR notes LIKE ? OR CAST(amount AS TEXT) LIKE ? OR currency LIKE ? OR strftime('%m', date) LIKE ? OR strftime('%B', date) LIKE ?)`;
     searchParams = [q, q, q, q, q, q];
   }
+  
+  const arch = archiveMode === 'Archived' ? ' AND is_archived = 1' : archiveMode === 'Active' ? ' AND is_archived = 0' : '';
+  const archE = archiveMode === 'Archived' ? ' AND e.is_archived = 1' : archiveMode === 'Active' ? ' AND e.is_archived = 0' : '';
 
-
-  // Get total income
-  const incomeRes = db.getFirstSync(
-    `SELECT SUM(amount) as total FROM income WHERE currency = ? AND date >= ? AND date <= ?${searchClause}`, 
-    [...baseParams, ...searchParams]
-  );
-
+  const incomeRes = db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}`, [...baseParams, ...searchParams]);
   const totalIncome = incomeRes?.total || 0;
-
-  // Get total expense
-  const expenseRes = db.getFirstSync(
-    `SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND date >= ? AND date <= ?${searchClause}`, 
-    [...baseParams, ...searchParams]
-  );
-
+  
+  const expenseRes = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}`, [...baseParams, ...searchParams]);
   const totalExpense = expenseRes?.total || 0;
 
-  // Get expense breakdown by category, joined with categories table for icons
+  const investRes = db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND contribution_date >= ? AND contribution_date <= ?${searchClause.replace(/date/g, 'contribution_date')}${arch}`, [...baseParams, ...searchParams]);
+  const totalInvestment = investRes?.total || 0;
+
   const breakdown = db.getAllSync(`
     SELECT e.category, SUM(e.amount) as total, c.icon 
     FROM expenses e
     LEFT JOIN categories c ON e.category = c.name AND c.type = 'expense'
-    WHERE e.currency = ? AND e.date >= ? AND e.date <= ?${searchClause.replace(/category/g, 'e.category').replace(/notes/g, 'e.notes').replace(/amount/g, 'e.amount').replace(/currency/g, 'e.currency').replace(/date/g, 'e.date')}
+    WHERE e.currency = ? AND e.date >= ? AND e.date <= ?${searchClause.replace(/category/g, 'e.category').replace(/notes/g, 'e.notes').replace(/amount/g, 'e.amount').replace(/currency/g, 'e.currency').replace(/date/g, 'e.date')}${archE}
     GROUP BY e.category
     ORDER BY total DESC
   `, [...baseParams, ...searchParams]);
-
-
+  
   return {
     totalIncome,
     totalExpense,
+    totalInvestment,
     savings: totalIncome - totalExpense,
-    breakdown: breakdown.map(b => ({
-      ...b,
-      percentage: totalExpense > 0 ? (b.total / totalExpense) * 100 : 0
-    }))
+    breakdown: breakdown.map(b => ({ ...b, percentage: totalExpense > 0 ? (b.total / totalExpense) * 100 : 0 }))
   };
 };
 
-/**
- * Get category spending trends over the last 6 months
- */
-export const getCategoryTrends = (currency) => {
+export const getCategoryTrends = (currency, archiveMode = 'Active') => {
   const db = getDb();
-  // We use strftime('%Y-%m') to group by month
+  const archE = archiveMode === 'Archived' ? ' AND e.is_archived = 1' : archiveMode === 'Active' ? ' AND e.is_archived = 0' : '';
   const rows = db.getAllSync(`
-    SELECT 
-      e.category, 
-      strftime('%Y-%m', e.date) as month,
-      SUM(e.amount) as total,
-      c.icon
+    SELECT e.category, strftime('%Y-%m', e.date) as month, SUM(e.amount) as total, c.icon
     FROM expenses e
     LEFT JOIN categories c ON e.category = c.name AND c.type = 'expense'
-    WHERE e.currency = ? AND e.date >= date('now', 'start of month', '-5 months')
+    WHERE e.currency = ? AND e.date >= date('now', 'start of month', '-5 months')${archE}
     GROUP BY e.category, month
     ORDER BY month DESC, total DESC
   `, [currency]);
-
-  // Transform rows into { month1: [{ category, total, icon }], month2: ... }
-  // or a pivot structure.
   const trends = {};
   rows.forEach(row => {
     if (!trends[row.month]) trends[row.month] = [];
     trends[row.month].push({ category: row.category, total: row.total, icon: row.icon });
   });
-
   return trends;
 };
 
-/**
- * Get savings trends (Income - Expenses) across currencies for the last 6 months
- */
-export const getSavingsTrends = () => {
+export const getSavingsTrends = (archiveMode = 'Active') => {
   const db = getDb();
-  // Union income and expenses
+  const archInc = archiveMode === 'Archived' ? ' WHERE is_archived = 1' : archiveMode === 'Active' ? ' WHERE is_archived = 0' : '';
+  const archExp = archiveMode === 'Archived' ? ' WHERE is_archived = 1' : archiveMode === 'Active' ? ' WHERE is_archived = 0' : '';
   const rows = db.getAllSync(`
-    SELECT 
-      strftime('%Y-%m', date) as month,
-      currency,
-      SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as totalIncome,
-      SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as totalExpense
-    FROM (
-      SELECT amount, currency, date, 'income' as type FROM income
-      UNION ALL
-      SELECT amount, currency, date, 'expense' as type FROM expenses
-    )
+    SELECT strftime('%Y-%m', date) as month, currency, SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as totalIncome, SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as totalExpense
+    FROM (SELECT amount, currency, date, 'income' as type FROM income${archInc} UNION ALL SELECT amount, currency, date, 'expense' as type FROM expenses${archExp})
     WHERE date >= date('now', 'start of month', '-5 months')
     GROUP BY month, currency
     ORDER BY month DESC
   `);
-
   const trends = {};
   rows.forEach(row => {
     if (!trends[row.month]) trends[row.month] = { AED: { savings: 0 }, INR: { savings: 0 } };
-    trends[row.month][row.currency] = {
-      savings: row.totalIncome - row.totalExpense,
-      income: row.totalIncome,
-      expense: row.totalExpense
-    };
+    trends[row.month][row.currency] = { savings: row.totalIncome - row.totalExpense, income: row.totalIncome, expense: row.totalExpense };
   });
-
   return trends;
 };
-
-/**
- * Get investment analytics (Monthly Trends and Category Breakdown)
- */
-export const getInvestmentAnalytics = (currency) => {
-  const db = getDb();
-  const params = [currency];
-
-  // Total Invested
-  const totalRes = db.getFirstSync(`SELECT SUM(amount) as total FROM investments WHERE currency = ?`, params);
-  const totalInvested = totalRes?.total || 0;
-
-  // Category Breakdown
-  const breakdown = db.getAllSync(`
-    SELECT category, SUM(amount) as total 
-    FROM investments 
-    WHERE currency = ? 
-    GROUP BY category 
-    ORDER BY total DESC
-  `, params);
-
-  // Monthly Trend (Last 12 months)
-  const monthlyTrend = db.getAllSync(`
-    SELECT strftime('%Y-%m', date) as month, SUM(amount) as total
-    FROM investments
-    WHERE currency = ?
-    GROUP BY month
-    ORDER BY month DESC
-    LIMIT 12
-  `, params);
-
-  return {
-    totalInvested,
-    breakdown,
-    monthlyTrend: monthlyTrend.reverse(),
-  };
-};
-

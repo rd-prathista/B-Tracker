@@ -8,22 +8,24 @@ import { colors } from '../theme/colors';
  */
 export default function Toast({ message, type = 'success', visible, onHide }) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(-30)).current; // Slides down from top
+  const translateY = useRef(new Animated.Value(-50)).current; 
 
   useEffect(() => {
     if (visible) {
       Animated.parallel([
-        Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]).start(() => {
-        // Auto-dismiss after 2.5s
         setTimeout(() => {
           Animated.parallel([
             Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-            Animated.timing(translateY, { toValue: 30, duration: 300, useNativeDriver: true }),
+            Animated.timing(translateY, { toValue: -20, duration: 300, useNativeDriver: true }),
           ]).start(() => onHide?.());
-        }, 2500);
+        }, 2200);
       });
+    } else {
+      opacity.setValue(0);
+      translateY.setValue(-50);
     }
   }, [visible]);
 
@@ -34,7 +36,7 @@ export default function Toast({ message, type = 'success', visible, onHide }) {
 
   return (
     <Animated.View style={[styles.container, { opacity, transform: [{ translateY }], backgroundColor: bgColor }]}>
-      <Ionicons name={icon} size={20} color="#fff" />
+      <Ionicons name={icon} size={18} color="#fff" />
       <Text style={styles.text}>{message}</Text>
     </Animated.View>
   );
@@ -43,26 +45,21 @@ export default function Toast({ message, type = 'success', visible, onHide }) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 54,   // Top position — always visible, above keyboard
-    left: 24,
-    right: 24,
+    top: 60,
+    left: 20,
+    right: 20,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    zIndex: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    zIndex: 9999,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  text: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-    flex: 1,
-  },
+  text: { color: '#fff', fontWeight: '700', fontSize: 13, flex: 1 },
 });

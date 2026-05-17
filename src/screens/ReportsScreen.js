@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform, TextInput, LayoutAnimation, UIManager } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform, TextInput, LayoutAnimation, UIManager, Alert } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -8,11 +8,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics } from '../services/transactionService';
+import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments } from '../services/transactionService';
 
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import FadeInView from '../components/FadeInView';
+import { fmt } from '../utils/formatters';
 
 const FILTERS = ['All Time', 'Custom', 'This Month', 'Last Month', '3 Months'];
 
@@ -36,7 +37,6 @@ const getDatesForFilter = (filter, customStart, customEnd) => {
   return { start: start.toISOString(), end: end.toISOString() };
 };
 
-const fmt = (n) => parseFloat(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const monthName = (yyyyMM) => {
   const [y, m] = yyyyMM.split('-');
   return new Date(y, m - 1).toLocaleString('default', { month: 'short', year: 'numeric' });
@@ -62,29 +62,34 @@ export default function ReportsScreen({ navigation }) {
   const [overviewData, setOverviewData] = useState({ totalIncome: 0, totalExpense: 0, savings: 0, breakdown: [] });
   const [categoryTrends, setCategoryTrends] = useState({});
   const [savingsTrends, setSavingsTrends] = useState({});
-  const [investmentData, setInvestmentData] = useState({ totalInvested: 0, breakdown: [], monthlyTrend: [] });
-
+  const [investmentData, setInvestmentData] = useState({ activeInvestments: [], archivedInvestments: [], totalInvested: 0 });
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
+  const [archiveMode, setArchiveMode] = useState('Active');
+  const [expandedId, setExpandedId] = useState(null);
+  const [investFilter, setInvestFilter] = useState('Active'); // 'Active', 'Completed', 'Archived'
 
   const loadData = () => {
+    const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
     if (activeTab === 'Overview') {
-      const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
-      setOverviewData(getReportData(currency, start, end, searchQuery));
+      setOverviewData(getReportData(currency, start, end, searchQuery, archiveMode));
+      setInvestmentData(getInvestmentAnalytics(currency));
     } else if (activeTab === 'Expense') {
-
-      setCategoryTrends(getCategoryTrends(currency));
+      setCategoryTrends(getCategoryTrends(currency, archiveMode));
     } else if (activeTab === 'Savings') {
-      setSavingsTrends(getSavingsTrends());
+      setSavingsTrends(getSavingsTrends(archiveMode));
     } else if (activeTab === 'Invest') {
       setInvestmentData(getInvestmentAnalytics(currency));
     }
   };
 
+  const toggleExpand = (id) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedId(expandedId === id ? null : id);
+  };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [activeTab, currency, dateFilter, customStart, customEnd, searchQuery]));
+  useFocusEffect(useCallback(() => { loadData(); }, [activeTab, currency, dateFilter, customStart, customEnd, archiveMode, searchQuery]));
 
 
   const accentColor = currency === 'AED' ? colors.primary : colors.accentTeal;
@@ -114,6 +119,36 @@ export default function ReportsScreen({ navigation }) {
       {['AED', 'INR'].map((cur) => (
         <TouchableOpacity key={cur} style={[styles.curBtn, currency === cur && { backgroundColor: cur === 'AED' ? colors.primary : colors.accentTeal }]} onPress={() => setCurrency(cur)}>
           <Text style={[styles.curText, currency === cur && styles.curTextActive]}>{cur}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderArchiveSelector = () => (
+    <View style={{ flexDirection: 'row', paddingHorizontal: 18, marginBottom: 16, gap: 10 }}>
+      {['Active', 'Archived', 'All'].map((mode) => (
+        <TouchableOpacity
+          key={mode}
+          style={[
+            styles.tabBtn,
+            archiveMode === mode && { backgroundColor: colors.accentIndigo + '15', borderColor: colors.accentIndigo },
+            { flex: 1 }
+          ]}
+          onPress={() => {
+            setArchiveMode(mode);
+            if (mode === 'Archived') {
+              setDateFilter('All Time');
+            } else if (dateFilter === 'All Time') {
+              setDateFilter('This Month');
+            }
+          }}
+        >
+          <Text style={[
+            styles.tabText,
+            archiveMode === mode && { color: colors.accentIndigo, fontFamily: 'Inter_700Bold' }
+          ]}>
+            {mode === 'Active' ? 'Active Data' : mode === 'Archived' ? 'Archived Data' : 'All Data'}
+          </Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -274,61 +309,225 @@ export default function ReportsScreen({ navigation }) {
         </View>
       </FadeInView>
     );
-  const renderInvestments = () => (
-    <FadeInView delay={0}>
-      <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
-      
-      <View style={{ paddingHorizontal: 18 }}>
-        <GlassCard style={styles.unifiedSummaryCard}>
-          <LinearGradient colors={[colors.accentIndigo + '10', 'transparent']} style={StyleSheet.absoluteFillObject} start={{x:0, y:0}} end={{x:1, y:1}} />
-          <View style={styles.usRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={[styles.usIconWrap, { backgroundColor: colors.accentIndigo + '20' }]}>
-                <Ionicons name="briefcase-outline" size={14} color={colors.accentIndigo} />
+  };
+  const handleClearAllInvestments = () => {
+    Alert.alert(
+      'Clear All Investments',
+      'Are you sure you want to permanently clear all investments and contribution history? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Clear All', 
+          style: 'destructive',
+          onPress: () => {
+            clearAllInvestments();
+            loadData();
+            Alert.alert('Success', 'All investments and contributions cleared successfully.');
+          }
+        }
+      ]
+    );
+  };
+
+  const renderInvestments = () => {
+    let list = [];
+    if (investFilter === 'Active') {
+      list = investmentData.activeInvestments || [];
+    } else {
+      list = [
+        ...(investmentData.archivedInvestments || []),
+        ...(investmentData.completedInvestments || [])
+      ];
+    }
+
+    return (
+      <FadeInView delay={0}>
+        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
+        
+        <View style={{ paddingHorizontal: 18 }}>
+          <GlassCard style={styles.unifiedSummaryCard}>
+            <LinearGradient colors={[colors.accentIndigo + '10', 'transparent']} style={StyleSheet.absoluteFillObject} start={{x:0, y:0}} end={{x:1, y:1}} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <View style={[styles.usIconWrap, { backgroundColor: colors.accentIndigo + '20' }]}>
+                  <Ionicons name="briefcase-outline" size={14} color={colors.accentIndigo} />
+                </View>
+                <Text style={[styles.usLabel, { flexShrink: 1 }]} numberOfLines={1}>TOTAL WEALTH ALLOCATION</Text>
               </View>
-              <Text style={styles.usLabel}>TOTAL INVESTED</Text>
+              <View style={{ width: 10 }} />
+              <Text style={[styles.usVal, { color: colors.accentIndigo, textAlign: 'right' }]}>{currency} {fmt(investmentData.totalInvested)}</Text>
             </View>
-            <Text style={[styles.usVal, { color: colors.accentIndigo }]}>{currency} {fmt(investmentData.totalInvested)}</Text>
+          </GlassCard>
+
+          {/* Section Header */}
+          <Text style={[styles.sectionLabel, { marginTop: 16, marginBottom: 12 }]}>
+            {investFilter === 'Active' ? 'ACTIVE ENTRIES' : 'ARCHIVED ENTRIES'} ({list.length})
+          </Text>
+
+          {/* Large Side-by-Side Action Buttons */}
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+            {investFilter === 'Active' ? (
+              <TouchableOpacity 
+                onPress={() => setInvestFilter('Archived')} 
+                style={{ 
+                  flex: 1,
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  gap: 8, 
+                  backgroundColor: colors.success + '10', 
+                  paddingVertical: 12, 
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.success + '35'
+                }}
+              >
+                <Ionicons name="archive-outline" size={16} color={colors.success} />
+                <Text style={{ ...typography.bodyMedium, color: colors.success, fontWeight: '700' }}>View Archived</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                onPress={() => setInvestFilter('Active')} 
+                style={{ 
+                  flex: 1,
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  gap: 8, 
+                  backgroundColor: colors.accentIndigo + '10', 
+                  paddingVertical: 12, 
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: colors.accentIndigo + '35'
+                }}
+              >
+                <Ionicons name="list-outline" size={16} color={colors.accentIndigo} />
+                <Text style={{ ...typography.bodyMedium, color: colors.accentIndigo, fontWeight: '700' }}>View Active</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity 
+              onPress={handleClearAllInvestments} 
+              style={{ 
+                flex: 1,
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                gap: 8, 
+                backgroundColor: colors.danger + '10', 
+                paddingVertical: 12, 
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: colors.danger + '35'
+              }}
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.danger} />
+              <Text style={{ ...typography.bodyMedium, color: colors.danger, fontWeight: '700' }}>Clear All</Text>
+            </TouchableOpacity>
           </View>
-        </GlassCard>
 
-        <Text style={[styles.sectionLabel, { marginTop: 20, marginBottom: 12 }]}>CATEGORY BREAKDOWN</Text>
-        {investmentData.breakdown.length === 0 ? (
-          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No investments found</Text></View>
-        ) : (
-          investmentData.breakdown.map((item, i) => {
-            const percentage = investmentData.totalInvested > 0 ? (item.total / investmentData.totalInvested) * 100 : 0;
-            return (
-              <View key={item.category} style={{ marginBottom: 15 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <Text style={styles.catNameText}>{item.category}</Text>
-                  <Text style={styles.catValText}>{currency} {fmt(item.total)} ({percentage.toFixed(0)}%)</Text>
-                </View>
-                <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: `${percentage}%`, backgroundColor: colors.accentIndigo }]} />
-                </View>
-              </View>
-            );
-          })
-        )}
+          {list.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Text style={typography.bodySmall}>
+                No {investFilter.toLowerCase()} investments found
+              </Text>
+            </View>
+          ) : (
+            list.map((inv) => {
+              const isExpanded = expandedId === inv.id;
+              const tenureMonths = inv.tenure_type === 'Years' ? inv.tenure_value * 12 : inv.tenure_value;
+              const progress = Math.min(100, (inv.total_invested / (inv.target_amount || inv.total_invested || 1)) * 100);
 
-        <Text style={[styles.sectionLabel, { marginTop: 20, marginBottom: 12 }]}>MONTHLY TREND</Text>
-        {investmentData.monthlyTrend.length === 0 ? (
-          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No trend data available</Text></View>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 20 }}>
-            {investmentData.monthlyTrend.map((m, i) => (
-              <GlassCard key={m.month} style={{ width: 110 }}>
-                <Text style={{ ...typography.caption, color: colors.textMuted, marginBottom: 4 }}>{monthName(m.month)}</Text>
-                <Text style={{ ...typography.bodyMedium, fontWeight: '700' }}>{fmt(m.total)}</Text>
-              </GlassCard>
-            ))}
-          </ScrollView>
-        )}
-      </View>
-    </FadeInView>
-  );
+              return (
+                <GlassCard key={inv.id} style={{ padding: 16, marginBottom: 12 }}>
+                  <TouchableOpacity onPress={() => toggleExpand(inv.id)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <Text style={{ ...typography.bodyMedium, fontWeight: '700', color: colors.text }}>{inv.name}</Text>
+                      <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
+                        {inv.type} · {inv.tenure_value} {inv.tenure_type}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ ...typography.bodyMedium, fontWeight: '700', color: colors.accentIndigo }}>
+                        {inv.currency} {fmt(inv.total_invested)}
+                      </Text>
+                      <Text style={{ ...typography.caption, color: colors.textSecondary, marginTop: 4 }}>
+                        {progress.toFixed(0)}% Target
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
 
+                  {isExpanded && (
+                    <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={{ ...typography.caption, color: colors.textMuted }}>Target Amount</Text>
+                        <Text style={{ ...typography.bodySmall, color: colors.text }}>
+                          {inv.currency} {inv.target_amount ? fmt(inv.target_amount) : '---'}
+                        </Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={{ ...typography.caption, color: colors.textMuted }}>Status</Text>
+                        <Text style={{ ...typography.bodySmall, color: inv.status === 'Active' || !inv.status ? colors.success : inv.status === 'Completed' ? colors.accentTeal : colors.textMuted }}>
+                          {inv.status || 'Active'}
+                        </Text>
+                      </View>
+                      {inv.notes && (
+                        <View style={{ marginTop: 6, marginBottom: 4 }}>
+                          <Text style={{ ...typography.caption, color: colors.textMuted }}>Notes</Text>
+                          <Text style={{ ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 }}>{inv.notes}</Text>
+                        </View>
+                      )}
+
+                      {/* Card Action Buttons (History & Add Invest) */}
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                        <TouchableOpacity 
+                          onPress={() => navigation.navigate('AllTransactions', { investmentId: inv.id })}
+                          style={{ 
+                            flex: 1, 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            gap: 6, 
+                            backgroundColor: colors.cardSolid, 
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            paddingVertical: 8, 
+                            borderRadius: 8 
+                          }}
+                        >
+                          <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                          <Text style={{ ...typography.bodySmall, color: colors.textSecondary, fontWeight: '700' }}>History</Text>
+                        </TouchableOpacity>
+
+                        {inv.status !== 'Completed' && inv.status !== 'Archived' && (
+                          <TouchableOpacity 
+                            onPress={() => navigation.navigate('AddTransaction', { type: 'investment', investmentId: inv.id, mode: 'contribution' })}
+                            style={{ 
+                              flex: 1, 
+                              flexDirection: 'row', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              gap: 6, 
+                              backgroundColor: colors.accentIndigo, 
+                              paddingVertical: 8, 
+                              borderRadius: 8 
+                            }}
+                          >
+                            <Ionicons name="add-circle-outline" size={14} color="#fff" />
+                            <Text style={{ ...typography.bodySmall, color: '#fff', fontWeight: '700' }}>Add Invest</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                    </View>
+                  )}
+                </GlassCard>
+              );
+            })
+          )}
+        </View>
+      </FadeInView>
+    );
   };
 
 
@@ -376,6 +575,8 @@ export default function ReportsScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Archive selectors hidden */}
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {activeTab === 'Overview' && renderOverview()}
