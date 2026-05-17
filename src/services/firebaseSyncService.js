@@ -63,7 +63,6 @@ export const refreshFirebaseToken = async () => {
 export const uploadToFirebase = async () => {
   // Always refresh token before sync to avoid 401
   const idToken = await refreshFirebaseToken();
-
   const userId = await SecureStore.getItemAsync('firebase_user_id');
   const email = await SecureStore.getItemAsync('firebase_user_email');
 
@@ -143,4 +142,3 @@ export const firebaseLogout = async () => {
   await SecureStore.deleteItemAsync('firebase_user_id');
   await SecureStore.deleteItemAsync('firebase_user_email');
 };
-

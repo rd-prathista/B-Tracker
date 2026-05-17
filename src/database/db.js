@@ -71,6 +71,7 @@ export const initDatabase = () => {
     try { db.execSync("ALTER TABLE income ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
     try { db.execSync("ALTER TABLE expenses ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
     try { db.execSync("ALTER TABLE investment_contributions ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
+    
     // v3.1 migration (Advanced Investments)
     try {
       try { db.execSync("ALTER TABLE investments RENAME TO investments_old;"); } catch (e) {}
@@ -127,7 +128,6 @@ export const initDatabase = () => {
     } catch (e) { console.log('Investment migration failed:', e); }
 
     try {
-
       db.execSync(`
         CREATE TABLE IF NOT EXISTS goals (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
