@@ -5,9 +5,9 @@ const db = SQLite.openDatabaseSync('btracker.db');
 
 export const initDatabase = () => {
   try {
+    // 1. Enable journal mode and open baseline tables
     db.execSync(`
       PRAGMA journal_mode = WAL;
-      PRAGMA foreign_keys = ON;
       
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,6 +24,8 @@ export const initDatabase = () => {
         date TEXT NOT NULL,
         category TEXT NOT NULL,
         notes TEXT,
+        attachment_uri TEXT,
+        is_archived INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -34,6 +36,8 @@ export const initDatabase = () => {
         date TEXT NOT NULL,
         category TEXT NOT NULL,
         notes TEXT,
+        attachment_uri TEXT,
+        is_archived INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -51,111 +55,225 @@ export const initDatabase = () => {
         currency TEXT DEFAULT 'AED',
         default_currency_mode TEXT DEFAULT 'AED',
         biometrics_enabled INTEGER DEFAULT 0,
+        dev_cleared INTEGER DEFAULT 0,
         last_sync_time TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS investments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        recurring_amount REAL NOT NULL,
+        tenure_value INTEGER NOT NULL,
+        tenure_type TEXT NOT NULL, 
+        target_amount REAL,
+        installments_paid INTEGER DEFAULT 1,
+        total_invested REAL DEFAULT 0,
+        next_due_date TEXT,
+        status TEXT DEFAULT 'Active', 
+        start_date TEXT NOT NULL,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS investment_contributions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        investment_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        currency TEXT NOT NULL,
+        contribution_date TEXT NOT NULL,
+        notes TEXT,
+        attachment_uri TEXT,
+        is_archived INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS goals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        target_amount REAL NOT NULL,
+        current_amount REAL DEFAULT 0,
+        currency TEXT NOT NULL,
+        target_date TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        type TEXT NOT NULL,
+        amount REAL,
+        currency TEXT,
+        due_date TEXT NOT NULL,
+        repeat_type TEXT NOT NULL DEFAULT 'One Time',
+        enabled INTEGER DEFAULT 1,
+        linked_investment_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // --- Data Migrations (safe to run each time) ---
+    // 2. Read current user_version
+    const versionResult = db.getFirstSync("PRAGMA user_version;");
+    const currentVersion = versionResult ? versionResult.user_version : 0;
 
-    try { db.execSync("ALTER TABLE income ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';"); } catch (e) {}
-    try { db.execSync("ALTER TABLE expenses ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';"); } catch (e) {}
-    try { db.execSync("ALTER TABLE categories ADD COLUMN icon TEXT DEFAULT 'ellipse-outline';"); } catch (e) {}
-    try { db.execSync("ALTER TABLE users ADD COLUMN password_hash TEXT;"); } catch (e) {}
-    try { db.execSync("ALTER TABLE users ADD COLUMN pin_hash TEXT;"); } catch (e) {}
-    try { db.execSync("ALTER TABLE app_settings ADD COLUMN default_currency_mode TEXT DEFAULT 'AED';"); } catch (e) {}
-    try { db.execSync("ALTER TABLE app_settings ADD COLUMN biometrics_enabled INTEGER DEFAULT 0;"); } catch (e) {}
+    if (currentVersion < 4) {
+      console.log(`Running database migration/repair (current version: ${currentVersion})`);
+      
+      // Temporarily disable foreign keys during schema alterations
+      db.execSync("PRAGMA foreign_keys = OFF;");
 
-    // Attachments & Archive migration
-    try { db.execSync("ALTER TABLE income ADD COLUMN attachment_uri TEXT;"); } catch (e) {}
-    try { db.execSync("ALTER TABLE expenses ADD COLUMN attachment_uri TEXT;"); } catch (e) {}
-    try { db.execSync("ALTER TABLE investment_contributions ADD COLUMN attachment_uri TEXT;"); } catch (e) {}
-    try { db.execSync("ALTER TABLE income ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
-    try { db.execSync("ALTER TABLE expenses ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
-    try { db.execSync("ALTER TABLE investment_contributions ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch (e) {}
-    
-    // v3.1 migration (Advanced Investments)
-    try {
-      try { db.execSync("ALTER TABLE investments RENAME TO investments_old;"); } catch (e) {}
-
-      db.execSync(`
-        CREATE TABLE IF NOT EXISTS investments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          type TEXT NOT NULL,
-          name TEXT NOT NULL,
-          currency TEXT NOT NULL,
-          recurring_amount REAL NOT NULL,
-          tenure_value INTEGER NOT NULL,
-          tenure_type TEXT NOT NULL, 
-          target_amount REAL,
-          installments_paid INTEGER DEFAULT 1,
-          total_invested REAL DEFAULT 0,
-          next_due_date TEXT,
-          status TEXT DEFAULT 'Active', 
-          start_date TEXT NOT NULL,
-          notes TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-
-      db.execSync(`
-        CREATE TABLE IF NOT EXISTS investment_contributions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          investment_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          currency TEXT NOT NULL,
-          contribution_date TEXT NOT NULL,
-          notes TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
-        );
-      `);
-
+      // Case A: User has investments_old from a failed/incomplete migration. Restore it.
       const oldExists = db.getAllSync("SELECT name FROM sqlite_master WHERE type='table' AND name='investments_old'");
       if (oldExists.length > 0) {
-        const oldData = db.getAllSync("SELECT * FROM investments_old");
-        oldData.forEach(row => {
-          const result = db.runSync(
-            "INSERT INTO investments (type, name, currency, recurring_amount, tenure_value, tenure_type, total_invested, start_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [row.category, row.category, row.currency, row.amount, 1, 'Months', row.amount, row.date, row.notes]
-          );
-          const masterId = result.lastInsertRowId;
-          db.runSync(
-            "INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes) VALUES (?, ?, ?, ?, ?)",
-            [masterId, row.amount, row.currency, row.date, row.notes]
-          );
-        });
-        db.execSync("DROP TABLE IF EXISTS investments_old;");
+        console.log("Restoring investments_old table to investments...");
+        try {
+          db.execSync(`
+            DROP TABLE IF EXISTS investments;
+            ALTER TABLE investments_old RENAME TO investments;
+          `);
+        } catch (e) {
+          console.error("Failed to restore investments_old table:", e);
+        }
       }
-    } catch (e) { console.log('Investment migration failed:', e); }
 
-    try {
-      db.execSync(`
-        CREATE TABLE IF NOT EXISTS goals (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          title TEXT NOT NULL,
-          target_amount REAL NOT NULL,
-          current_amount REAL DEFAULT 0,
-          currency TEXT NOT NULL,
-          target_date TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
+      // Case B: User has the old investments table from pre-v3.1 (columns category, date, etc. instead of tenure_value)
+      // Check if table exists and has old schema columns (like amount)
+      let hasOldColumns = false;
+      const investmentsTableExists = db.getAllSync("SELECT name FROM sqlite_master WHERE type='table' AND name='investments'");
+      if (investmentsTableExists.length > 0) {
+        const tableInfo = db.getAllSync("PRAGMA table_info(investments);");
+        hasOldColumns = tableInfo.some(col => col.name === 'amount' || col.name === 'date');
+      }
 
-      db.execSync(`
-        CREATE TABLE IF NOT EXISTS reminders (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          title TEXT NOT NULL,
-          type TEXT NOT NULL,
-          amount REAL,
-          currency TEXT,
-          due_date TEXT NOT NULL,
-          repeat_type TEXT NOT NULL DEFAULT 'One Time',
-          enabled INTEGER DEFAULT 1,
-          linked_investment_id INTEGER,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-    } catch (e) { console.log('Goals and reminders table creation failed:', e); }
+      if (hasOldColumns) {
+        console.log("Migrating legacy investments table to new schema...");
+        try {
+          db.execSync("ALTER TABLE investments RENAME TO investments_old;");
+          
+          // Recreate investments table with new schema
+          db.execSync(`
+            CREATE TABLE IF NOT EXISTS investments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              type TEXT NOT NULL,
+              name TEXT NOT NULL,
+              currency TEXT NOT NULL,
+              recurring_amount REAL NOT NULL,
+              tenure_value INTEGER NOT NULL,
+              tenure_type TEXT NOT NULL, 
+              target_amount REAL,
+              installments_paid INTEGER DEFAULT 1,
+              total_invested REAL DEFAULT 0,
+              next_due_date TEXT,
+              status TEXT DEFAULT 'Active', 
+              start_date TEXT NOT NULL,
+              notes TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+          `);
+          
+          // Recreate investment_contributions table with correct foreign key
+          db.execSync(`
+            CREATE TABLE IF NOT EXISTS investment_contributions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              investment_id INTEGER NOT NULL,
+              amount REAL NOT NULL,
+              currency TEXT NOT NULL,
+              contribution_date TEXT NOT NULL,
+              notes TEXT,
+              attachment_uri TEXT,
+              is_archived INTEGER DEFAULT 0,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
+            );
+          `);
+
+          // Migrate data
+          const oldData = db.getAllSync("SELECT * FROM investments_old");
+          oldData.forEach(row => {
+            const result = db.runSync(
+              "INSERT INTO investments (type, name, currency, recurring_amount, tenure_value, tenure_type, total_invested, start_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [row.category, row.category, row.currency, row.amount, 1, 'Months', row.amount, row.date, row.notes]
+            );
+            const masterId = result.lastInsertRowId;
+            db.runSync(
+              "INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes) VALUES (?, ?, ?, ?, ?)",
+              [masterId, row.amount, row.currency, row.date, row.notes]
+            );
+          });
+          
+          db.execSync("DROP TABLE IF EXISTS investments_old;");
+        } catch (e) {
+          console.error("Legacy investments migration failed:", e);
+        }
+      } else {
+        // They already have the new investments table schema, but investment_contributions foreign key might be broken (pointing to investments_old)
+        // We recreate investment_contributions to fix the foreign key
+        console.log("Repairing investment_contributions table foreign key constraint...");
+        try {
+          db.execSync(`
+            CREATE TABLE IF NOT EXISTS investment_contributions_temp (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              investment_id INTEGER NOT NULL,
+              amount REAL NOT NULL,
+              currency TEXT NOT NULL,
+              contribution_date TEXT NOT NULL,
+              notes TEXT,
+              attachment_uri TEXT,
+              is_archived INTEGER DEFAULT 0,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
+            );
+          `);
+
+          const contribExists = db.getAllSync("SELECT name FROM sqlite_master WHERE type='table' AND name='investment_contributions'");
+          if (contribExists.length > 0) {
+            db.execSync(`
+              INSERT OR IGNORE INTO investment_contributions_temp (id, investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived, created_at)
+              SELECT id, investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived, created_at
+              FROM investment_contributions
+              WHERE investment_id IN (SELECT id FROM investments);
+            `);
+            db.execSync("DROP TABLE IF EXISTS investment_contributions;");
+          }
+
+          db.execSync("ALTER TABLE investment_contributions_temp RENAME TO investment_contributions;");
+        } catch (e) {
+          console.error("Failed to repair investment_contributions table foreign key:", e);
+        }
+      }
+
+      // Column migrations (safe ALTERS)
+      const alters = [
+        "ALTER TABLE income ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';",
+        "ALTER TABLE expenses ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';",
+        "ALTER TABLE categories ADD COLUMN icon TEXT DEFAULT 'ellipse-outline';",
+        "ALTER TABLE users ADD COLUMN password_hash TEXT;",
+        "ALTER TABLE users ADD COLUMN pin_hash TEXT;",
+        "ALTER TABLE app_settings ADD COLUMN default_currency_mode TEXT DEFAULT 'AED';",
+        "ALTER TABLE app_settings ADD COLUMN biometrics_enabled INTEGER DEFAULT 0;",
+        "ALTER TABLE app_settings ADD COLUMN dev_cleared INTEGER DEFAULT 0;",
+        "ALTER TABLE income ADD COLUMN attachment_uri TEXT;",
+        "ALTER TABLE expenses ADD COLUMN attachment_uri TEXT;",
+        "ALTER TABLE investment_contributions ADD COLUMN attachment_uri TEXT;",
+        "ALTER TABLE income ADD COLUMN is_archived INTEGER DEFAULT 0;",
+        "ALTER TABLE expenses ADD COLUMN is_archived INTEGER DEFAULT 0;",
+        "ALTER TABLE investment_contributions ADD COLUMN is_archived INTEGER DEFAULT 0;"
+      ];
+
+      for (const query of alters) {
+        try { db.execSync(query); } catch (e) { /* Column already exists */ }
+      }
+
+      // Update PRAGMA user_version to 4
+      db.execSync("PRAGMA user_version = 4;");
+      db.execSync("PRAGMA foreign_keys = ON;");
+      console.log("Database migration/repair successfully completed to version 4!");
+    } else {
+      // Version is already >= 4, ensure foreign keys are enabled
+      db.execSync("PRAGMA foreign_keys = ON;");
+    }
 
     const iconUpdates = [
       ['Salary',       'briefcase-outline',       'income'],
