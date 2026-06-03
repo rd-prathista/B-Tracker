@@ -42,7 +42,8 @@
         "expo-build-properties",
         {
           "android": {
-            "enableProguardInReleaseBuilds": true
+            "enableProguardInReleaseBuilds": true,
+            "buildArchs": ["arm64-v8a"]
           }
         }
       ]
