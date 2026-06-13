@@ -279,11 +279,41 @@ export const getDashboardBalances = () => {
     const expense = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
     const investment = db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
     
+    // Fetch loan totals
+    const totalGiven = db.getFirstSync(
+      `SELECT SUM(amount) as total FROM loans WHERE type = 'I Gave' AND currency = ?`,
+      [code]
+    )?.total || 0;
+
+    const totalBorrowed = db.getFirstSync(
+      `SELECT SUM(amount) as total FROM loans WHERE type = 'I Borrowed' AND currency = ?`,
+      [code]
+    )?.total || 0;
+
+    const totalRecovered = db.getFirstSync(
+      `SELECT SUM(r.amount) as total 
+       FROM loan_repayments r 
+       JOIN loans l ON r.loan_id = l.id 
+       WHERE l.type = 'I Gave' AND l.currency = ?`,
+      [code]
+    )?.total || 0;
+
+    const totalPaid = db.getFirstSync(
+      `SELECT SUM(r.amount) as total 
+       FROM loan_repayments r 
+       JOIN loans l ON r.loan_id = l.id 
+       WHERE l.type = 'I Borrowed' AND l.currency = ?`,
+      [code]
+    )?.total || 0;
+
+    const outstandingGiven = Math.max(0, totalGiven - totalRecovered);
+    const outstandingBorrowed = Math.max(0, totalBorrowed - totalPaid);
+
     return { 
       income, 
       expense, 
       investment, 
-      balance: income - expense - investment 
+      balance: income + outstandingBorrowed - expense - investment - outstandingGiven 
     };
   };
   return { AED: getByCode('AED'), INR: getByCode('INR') };

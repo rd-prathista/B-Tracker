@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Text, StyleSheet, View } from 'react-native';
+import { Animated, Text, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 
 /**
  * Usage: <Toast message="Saved!" type="success" visible={show} onHide={() => setShow(false)} />
  */
-export default function Toast({ message, type = 'success', visible, onHide }) {
+export default function Toast({ message, type = 'success', visible, onHide, actionLabel, onAction }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-50)).current; 
 
@@ -16,12 +16,14 @@ export default function Toast({ message, type = 'success', visible, onHide }) {
         Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.timing(translateY, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]).start(() => {
+        // If there's an action, let's keep it visible slightly longer (3000ms) to allow user interaction
+        const duration = actionLabel && onAction ? 3500 : 2200;
         setTimeout(() => {
           Animated.parallel([
             Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
             Animated.timing(translateY, { toValue: -20, duration: 300, useNativeDriver: true }),
           ]).start(() => onHide?.());
-        }, 2200);
+        }, duration);
       });
     } else {
       opacity.setValue(0);
@@ -38,6 +40,18 @@ export default function Toast({ message, type = 'success', visible, onHide }) {
     <Animated.View style={[styles.container, { opacity, transform: [{ translateY }], backgroundColor: bgColor }]}>
       <Ionicons name={icon} size={18} color="#fff" />
       <Text style={styles.text}>{message}</Text>
+      {actionLabel && onAction && (
+        <TouchableOpacity 
+          style={styles.actionBtn} 
+          onPress={() => {
+            onAction();
+            onHide?.();
+          }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.actionText}>{actionLabel}</Text>
+        </TouchableOpacity>
+      )}
     </Animated.View>
   );
 }
@@ -61,5 +75,16 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  text: { color: '#fff', fontWeight: '700', fontSize: 13, flex: 1 },
+  text: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 13, flex: 1 },
+  actionBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  actionText: {
+    color: '#fff',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+  },
 });

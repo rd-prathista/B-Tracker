@@ -16,11 +16,13 @@ export const getAppDataAsJSON = () => {
   const contributions = db.getAllSync('SELECT * FROM investment_contributions');
   const goals = db.getAllSync('SELECT * FROM goals');
   const reminders = db.getAllSync('SELECT * FROM reminders');
+  const loans = db.getAllSync('SELECT * FROM loans');
+  const repayments = db.getAllSync('SELECT * FROM loan_repayments');
 
   return {
-    version: '1.2',
+    version: '1.3',
     timestamp: new Date().toISOString(),
-    data: { income, expenses, categories, users, investments, contributions, goals, reminders }
+    data: { income, expenses, categories, users, investments, contributions, goals, reminders, loans, repayments }
   };
 };
 
@@ -67,6 +69,8 @@ export const importBackupData = async (backupJson) => {
   db.runSync('DELETE FROM investment_contributions');
   db.runSync('DELETE FROM goals');
   db.runSync('DELETE FROM reminders');
+  db.runSync('DELETE FROM loans');
+  db.runSync('DELETE FROM loan_repayments');
 
   // Restore Categories
   data.categories.forEach(c => {
@@ -116,6 +120,22 @@ export const importBackupData = async (backupJson) => {
     data.reminders.forEach(r => {
       db.runSync('INSERT INTO reminders (id, title, type, amount, currency, due_date, repeat_type, enabled, linked_investment_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
         [r.id, r.title, r.type, r.amount, r.currency, r.due_date, r.repeat_type, r.enabled, r.linked_investment_id, r.created_at]);
+    });
+  }
+
+  // Restore Loans
+  if (data.loans) {
+    data.loans.forEach(l => {
+      db.runSync('INSERT INTO loans (id, person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+        [l.id, l.person_name, l.type, l.source_type, l.amount, l.currency, l.start_date, l.expected_return_date, l.notes, l.status, l.is_archived || 0, l.created_at]);
+    });
+  }
+
+  // Restore Repayments
+  if (data.repayments) {
+    data.repayments.forEach(r => {
+      db.runSync('INSERT INTO loan_repayments (id, loan_id, amount, date, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)', 
+        [r.id, r.loan_id, r.amount, r.date, r.notes, r.created_at]);
     });
   }
 

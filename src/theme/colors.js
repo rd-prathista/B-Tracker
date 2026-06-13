@@ -24,6 +24,7 @@ export const colors = {
   // Secondary Ambient
   accentTeal: '#14B8A6',
   accentIndigo: '#6366F1',
+  accentBlue: '#F59E0B',
   
   // States
   danger: '#EF4444', // Red

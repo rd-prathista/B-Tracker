@@ -381,7 +381,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                         }}
                         disabled={isSaving}
                       >
-                        <Text style={[styles.currencyBtnText, { color: isSelected ? accentColor : colors.textSecondary }, isSelected && { fontWeight: '800' }]}>{cur}</Text>
+                        <Text style={[styles.currencyBtnText, { color: isSelected ? accentColor : colors.textSecondary }, isSelected && { fontFamily: 'Inter_800ExtraBold' }]}>{cur}</Text>
                         {isSelected && <View style={[styles.activeDot, { backgroundColor: accentColor }]} />}
                       </TouchableOpacity>
                     );
@@ -704,7 +704,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                         <View style={[styles.pickerIcon, { backgroundColor: (category === cat.name ? accentColor : colors.textMuted) + '20' }]}>
                           <Ionicons name={cat.icon || 'ellipse-outline'} size={20} color={category === cat.name ? accentColor : colors.textMuted} />
                         </View>
-                        <Text style={[styles.pickerItemText, category === cat.name && { color: accentColor, fontWeight: '700' }]}>
+                        <Text style={[styles.pickerItemText, category === cat.name && { color: accentColor, fontFamily: 'Inter_700Bold' }]}>
                           {cat.name}
                         </Text>
                         {category === cat.name && <Ionicons name="checkmark-circle" size={20} color={accentColor} />}
@@ -749,7 +749,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                         <Ionicons name="briefcase" size={20} color={colors.accentIndigo} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.pickerItemText, selectedInvestmentId == inv.id && { color: colors.accentIndigo, fontWeight: '700' }]}>
+                        <Text style={[styles.pickerItemText, selectedInvestmentId == inv.id && { color: colors.accentIndigo, fontFamily: 'Inter_700Bold' }]}>
                           {inv.name}
                         </Text>
                         <Text style={styles.dateLabel}>{inv.type} · {inv.currency} {inv.recurring_amount}/mo</Text>
@@ -779,20 +779,20 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 36, height: 36, justifyContent: 'center' },
   headerSpacer: { width: 36 },
-  title: { fontSize: 18, color: colors.text, fontWeight: '700' },
+  title: { fontSize: 18, color: colors.text, fontFamily: 'Inter_700Bold' },
   scroll: { paddingHorizontal: 18, paddingBottom: 36 },
 
   amountCard: { padding: 20, marginBottom: 12, overflow: 'hidden' },
   fieldLabel: {
     color: colors.textMuted,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: 'Inter_700Bold',
     letterSpacing: 1,
     marginBottom: 6,
   },
   amountInput: {
     fontSize: 46,
-    fontWeight: '800',
+    fontFamily: 'Inter_800ExtraBold',
     letterSpacing: -1,
     marginBottom: 14,
   },
@@ -808,7 +808,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6
   },
-  currencyBtnText: { fontWeight: '700', fontSize: 13 },
+  currencyBtnText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   activeDot: { width: 4, height: 4, borderRadius: 2 },
   invalidRow: { 
     borderWidth: 1, 
@@ -840,22 +840,22 @@ const styles = StyleSheet.create({
   dateLabel: {
     color: colors.textMuted,
     fontSize: 10,
-    fontWeight: '700',
+    fontFamily: 'Inter_700Bold',
     letterSpacing: 0.8,
     marginBottom: 1,
   },
-  dateValue: { color: colors.text, fontWeight: '600', fontSize: 14 },
+  dateValue: { color: colors.text, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  sectionLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
+  sectionLabel: { color: colors.textMuted, fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   newCatBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  newCatText: { fontWeight: '700', fontSize: 12 },
+  newCatText: { fontFamily: 'Inter_700Bold', fontSize: 12 },
 
   typeToggleRow: { flexDirection: 'row', backgroundColor: colors.cardSolid, borderRadius: 10, padding: 3, borderWidth: 1, borderColor: colors.border, marginTop: 8 },
   typeBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
   typeBtnActive: { backgroundColor: colors.accentIndigo },
-  typeText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
-  typeTextActive: { color: '#fff', fontWeight: '800' },
+  typeText: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.textSecondary },
+  typeTextActive: { color: '#fff', fontFamily: 'Inter_800ExtraBold' },
 
   notesInput: {
     backgroundColor: colors.cardSolid,
@@ -893,7 +893,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  saveText: { color: '#fff', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
+  saveText: { color: '#fff', fontFamily: 'Inter_800ExtraBold', fontSize: 16, letterSpacing: 0.3 },
 
   overlay: {
     flex: 1,
@@ -902,7 +902,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalCard: { padding: 20 },
-  modalTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginBottom: 16 },
+  modalTitle: { color: colors.text, fontSize: 17, fontFamily: 'Inter_700Bold', marginBottom: 16 },
   modalInput: {
     backgroundColor: colors.background,
     color: colors.text,
@@ -933,9 +933,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
   },
-  cancelText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
+  cancelText: { color: colors.textSecondary, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   createBtn: { flex: 1, padding: 12, borderRadius: 12, alignItems: 'center' },
-  createText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  createText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 14 },
 
   categorySelectBtn: {
     flexDirection: 'row',
@@ -951,7 +951,7 @@ const styles = StyleSheet.create({
     marginBottom: 18
   },
   categorySelectLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  selectedCategoryText: { ...typography.bodyMedium, fontWeight: '600' },
+  selectedCategoryText: { ...typography.bodyMedium, fontFamily: 'Inter_600SemiBold' },
   placeholderText: { ...typography.bodyMedium, color: colors.textMuted },
   invalidBtn: { borderColor: colors.danger + '50' },
 

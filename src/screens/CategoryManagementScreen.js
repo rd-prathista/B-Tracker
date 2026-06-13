@@ -408,7 +408,7 @@ export default function CategoryManagementScreen({ navigation }) {
              <GlassCard style={styles.dependencyCard}>
                 <Text style={styles.modalTitle}>Category in Use</Text>
                 <Text style={styles.modalSub}>
-                    This category has <Text style={{fontWeight: '700', color: colors.text}}>{usage.count} transactions</Text>. 
+                    This category has <Text style={{fontFamily: 'Inter_700Bold', color: colors.text}}>{usage.count} transactions</Text>. 
                     You must reassign them before deleting.
                 </Text>
 
@@ -501,7 +501,7 @@ const styles = StyleSheet.create({
   catRow: { marginBottom: 6, borderRadius: 12 },
   innerRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10 },
   iconBox: { width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  catName: { ...typography.bodyMedium, flex: 1, fontSize: 13, fontWeight: '600' },
+  catName: { ...typography.bodyMedium, flex: 1, fontSize: 13, fontFamily: 'Inter_600SemiBold' },
   rowActions: { flexDirection: 'row', gap: 4 },
   rowActionBtn: { width: 28, height: 28, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.03)', alignItems: 'center', justifyContent: 'center' },
 
@@ -520,33 +520,33 @@ const styles = StyleSheet.create({
   
   modalBtns: { flexDirection: 'row', gap: 10, marginTop: 24 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
-  cancelText: { ...typography.bodyMedium, color: colors.textSecondary, fontWeight: '600' },
+  cancelText: { ...typography.bodyMedium, color: colors.textSecondary, fontFamily: 'Inter_600SemiBold' },
   saveBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center' },
-  saveText: { ...typography.bodyMedium, color: '#fff', fontWeight: '700' },
+  saveText: { ...typography.bodyMedium, color: '#fff', fontFamily: 'Inter_700Bold' },
 
   dependencyCard: { width: '100%', padding: 22, borderRadius: 24 },
   optionToggle: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 14, padding: 4, marginBottom: 18 },
   optBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   optBtnActive: { backgroundColor: colors.border },
   optText: { ...typography.bodySmall, color: colors.textMuted },
-  optTextActive: { color: colors.text, fontWeight: '700' },
+  optTextActive: { color: colors.text, fontFamily: 'Inter_700Bold' },
 
   bulkBox: { paddingVertical: 10 },
   pillRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
   pill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: colors.border },
   pillActive: { borderColor: colors.primary, backgroundColor: colors.primary + '20' },
   pillText: { ...typography.bodySmall, color: colors.textSecondary },
-  pillTextActive: { color: colors.primary, fontWeight: '700' },
+  pillTextActive: { color: colors.primary, fontFamily: 'Inter_700Bold' },
   bulkApplyBtn: { backgroundColor: colors.primary, padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 12 },
-  bulkApplyText: { color: '#fff', fontWeight: '700' },
+  bulkApplyText: { color: '#fff', fontFamily: 'Inter_700Bold' },
 
   txReassignRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-  txAmt: { ...typography.bodyMedium, fontWeight: '700' },
+  txAmt: { ...typography.bodyMedium, fontFamily: 'Inter_700Bold' },
   txDate: { ...typography.caption, color: colors.textMuted },
   pillRowSmall: { flexDirection: 'row', gap: 6, paddingLeft: 10 },
   pillSmall: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.border },
-  pillTextSmall: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+  pillTextSmall: { fontSize: 10, color: colors.textSecondary, fontFamily: 'Inter_600SemiBold' },
 
   closeBtn: { marginTop: 20, padding: 10, alignItems: 'center' },
-  closeBtnText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  closeBtnText: { color: colors.textMuted, fontSize: 13, fontFamily: 'Inter_600SemiBold' },
 });

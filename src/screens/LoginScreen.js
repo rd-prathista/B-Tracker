@@ -224,6 +224,6 @@ const styles = StyleSheet.create({
   resetText: { ...typography.buttonSecondary },
 
   biometricBtn: { alignItems: 'center', marginTop: 12, gap: 8 },
-  biometricText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
+  biometricText: { ...typography.caption, color: colors.primary, fontFamily: 'Inter_700Bold' },
 });
 

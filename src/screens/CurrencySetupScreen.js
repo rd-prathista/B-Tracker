@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     width: 20, height: 20, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  currencySymbol: { fontSize: 28, fontWeight: '700', marginBottom: 4 },
+  currencySymbol: { fontSize: 28, fontFamily: 'Inter_700Bold', marginBottom: 4 },
   currencyCode:   { ...typography.h2, marginBottom: 4 },
   currencyName:   { ...typography.bodySmall, textAlign: 'center' },
 

@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   syncMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 4, marginLeft: 34 },
   syncTime: { ...typography.caption, color: colors.textMuted },
   userInfo: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: 4 },
-  userText: { ...typography.caption, color: colors.accentTeal, fontWeight: 'bold' },
+  userText: { ...typography.caption, color: colors.accentTeal, fontFamily: 'Inter_700Bold' },
   switchText: { ...typography.caption, color: colors.textMuted, marginTop: 2, textDecorationLine: 'underline' },
   
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
@@ -473,17 +473,17 @@ const styles = StyleSheet.create({
   modalSub: { ...typography.caption, color: colors.textMuted, marginBottom: 20 },
   input: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 14, color: colors.text, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   primaryBtn: { backgroundColor: colors.accentTeal, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 8 },
-  primaryBtnText: { color: '#fff', fontWeight: 'bold' },
+  primaryBtnText: { color: '#fff', fontFamily: 'Inter_700Bold' },
   cancelBtn: { marginTop: 16, alignItems: 'center' },
   cancelText: { color: colors.textMuted },
   toggleText: { textAlign: 'center', marginTop: 16, color: colors.accentTeal, fontSize: 13 },
-
+ 
   optionList: { marginTop: 10 },
   optionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'transparent' },
   optionBtnActive: { borderColor: colors.accentTeal + '50', backgroundColor: colors.accentTeal + '10' },
   optionInfo: { flex: 1 },
   optionText: { ...typography.bodyMedium, color: colors.textSecondary },
-  optionTextActive: { color: colors.text, fontWeight: '700' },
+  optionTextActive: { color: colors.text, fontFamily: 'Inter_700Bold' },
 
   toggleTrack: { width: 36, height: 20, borderRadius: 10, backgroundColor: colors.border, padding: 2, justifyContent: 'center' },
   toggleTrackActive: { backgroundColor: colors.accentTeal + '80' },

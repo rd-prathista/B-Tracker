@@ -9,11 +9,13 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { getDashboardBalances, getRecentTransactions, deleteTransaction, getActiveInvestmentsSummary, getArchivableCount, archiveOldTransactions, getArchivableTransactions } from '../services/transactionService';
 import { getUpcomingReminders, addReminder, updateReminder, deleteReminder, toggleReminder } from '../services/reminderService';
+import { getLoanSummary, convertTransactionToLoanActivity, getLoanTransactionsForHistory, deleteLoan, deleteRepayment } from '../services/loanService';
 
 import FadeInView from '../components/FadeInView';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
-import { TransactionActionModal, DeleteTransactionConfirmModal } from '../components/TransactionMenus';
+import { TransactionActionModal, DeleteTransactionConfirmModal, ConvertToLoanModal } from '../components/TransactionMenus';
+import Toast from '../components/Toast';
 import ReminderModal from '../components/ReminderModal';
 import { fmt, fmtDate } from '../utils/formatters';
 
@@ -22,26 +24,45 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const BalanceRow = ({ code, data, isLast }) => {
+  const hasLoans = (data.outstandingGiven || 0) > 0 || (data.outstandingBorrowed || 0) > 0;
   return (
-    <View style={[styles.balanceRow, !isLast && styles.borderBottom]}>
-      <View style={styles.balanceInfo}>
-        <Text style={styles.currencyCode}>{code} CASH BALANCE</Text>
-        <Text style={styles.balanceAmt}>{fmt(data.balance)}</Text>
+    <View style={[!isLast && styles.borderBottom, { paddingVertical: 12 }]}>
+      <View style={styles.balanceRow}>
+        <View style={styles.balanceInfo}>
+          <Text style={styles.currencyCode}>{code} CASH BALANCE</Text>
+          <Text style={styles.balanceAmt}>{fmt(data.balance)}</Text>
+        </View>
+        <View style={styles.balanceBreakdown}>
+          <View style={styles.breakdownItem}>
+            <Text style={[styles.breakdownLabel, { color: colors.success }]}>INCOME</Text>
+            <Text style={styles.breakdownValue}>{fmt(data.income)}</Text>
+          </View>
+          <View style={styles.breakdownItem}>
+            <Text style={[styles.breakdownLabel, { color: colors.danger }]}>EXPENSE</Text>
+            <Text style={styles.breakdownValue}>{fmt(data.expense)}</Text>
+          </View>
+          <View style={styles.breakdownItem}>
+            <Text style={[styles.breakdownLabel, { color: colors.accentIndigo }]}>INVESTED</Text>
+            <Text style={styles.breakdownValue}>{fmt(data.investment)}</Text>
+          </View>
+        </View>
       </View>
-      <View style={styles.balanceBreakdown}>
-        <View style={styles.breakdownItem}>
-          <Text style={[styles.breakdownLabel, { color: colors.success }]}>INCOME</Text>
-          <Text style={styles.breakdownValue}>{fmt(data.income)}</Text>
+      {hasLoans && (
+        <View style={styles.loanRowMultiLine}>
+          {(data.outstandingGiven || 0) > 0 && (
+            <View style={styles.loanRowLine}>
+              <Text style={styles.loanRowLabel}>Loans Given: </Text>
+              <Text style={styles.loanRowValue}>{code} {fmt(data.outstandingGiven)}</Text>
+            </View>
+          )}
+          {(data.outstandingBorrowed || 0) > 0 && (
+            <View style={[styles.loanRowLine, (data.outstandingGiven || 0) > 0 && { marginTop: 4 }]}>
+              <Text style={styles.loanRowLabel}>Loans Borrowed: </Text>
+              <Text style={[styles.loanRowValue, { color: colors.dangerLight }]}>{code} {fmt(data.outstandingBorrowed)}</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.breakdownItem}>
-          <Text style={[styles.breakdownLabel, { color: colors.danger }]}>EXPENSE</Text>
-          <Text style={styles.breakdownValue}>{fmt(data.expense)}</Text>
-        </View>
-        <View style={styles.breakdownItem}>
-          <Text style={[styles.breakdownLabel, { color: colors.accentIndigo }]}>INVESTED</Text>
-          <Text style={styles.breakdownValue}>{fmt(data.investment)}</Text>
-        </View>
-      </View>
+      )}
     </View>
   );
 };
@@ -70,14 +91,51 @@ export default function DashboardScreen({ navigation }) {
   const [previewArchiveData, setPreviewArchiveData] = useState(null);
 
 
+  const [conversionTx, setConversionTx] = useState(null);
+  const [showConversionModal, setShowConversionModal] = useState(false);
+
+  // Toast States
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastAction, setToastAction] = useState(null);
+
   const loadData = () => {
     const b = getDashboardBalances();
+    
+    // Enrich with outstanding loans
+    const aedLoans = getLoanSummary('AED');
+    const inrLoans = getLoanSummary('INR');
+    b.AED.outstandingGiven = aedLoans.outstandingGiven;
+    b.AED.outstandingBorrowed = aedLoans.outstandingBorrowed;
+    b.INR.outstandingGiven = inrLoans.outstandingGiven;
+    b.INR.outstandingBorrowed = inrLoans.outstandingBorrowed;
+    
     setBalances(b);
-    setRecentTx(getRecentTransactions(2));
+    
+    // Merge recent transactions and recent loans/repayments
+    const normalTxs = getRecentTransactions(10);
+    const loanTxs = getLoanTransactionsForHistory({ limit: 10 });
+    const mergedRecent = [...normalTxs, ...loanTxs]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 2); // display top 2
+      
+    setRecentTx(mergedRecent);
     setActiveInvestments(getActiveInvestmentsSummary());
     setReminders(getUpcomingReminders());
     setArchivableCount(getArchivableCount(6));
-    setHasData(b.AED.income > 0 || b.AED.expense > 0 || b.AED.investment > 0 || b.INR.income > 0 || b.INR.expense > 0 || b.INR.investment > 0);
+    
+    setHasData(
+      b.AED.income > 0 || 
+      b.AED.expense > 0 || 
+      b.AED.investment > 0 || 
+      b.INR.income > 0 || 
+      b.INR.expense > 0 || 
+      b.INR.investment > 0 ||
+      b.AED.outstandingGiven > 0 ||
+      b.AED.outstandingBorrowed > 0 ||
+      b.INR.outstandingGiven > 0 ||
+      b.INR.outstandingBorrowed > 0
+    );
   };
 
 
@@ -89,7 +147,11 @@ export default function DashboardScreen({ navigation }) {
     if (!actionTx) return;
     const tx = actionTx;
     setActionTx(null);
-    navigation.navigate('AddTransaction', { type: tx.type, mode: 'edit', transactionId: tx.id });
+    if (tx.type === 'loan') {
+      navigation.navigate('AddLoan', { loanId: tx.loanId });
+    } else {
+      navigation.navigate('AddTransaction', { type: tx.type, mode: 'edit', transactionId: tx.id });
+    }
   };
 
 
@@ -109,7 +171,13 @@ export default function DashboardScreen({ navigation }) {
     if (!deleteTx) return;
     setDeleting(true);
     try {
-      deleteTransaction(deleteTx.type, deleteTx.id);
+      if (deleteTx.type === 'loan') {
+        deleteLoan(deleteTx.loanId);
+      } else if (deleteTx.type === 'repayment') {
+        deleteRepayment(deleteTx.repaymentId);
+      } else {
+        deleteTransaction(deleteTx.type, deleteTx.id);
+      }
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       loadData();
       setDeleteTx(null);
@@ -187,39 +255,54 @@ export default function DashboardScreen({ navigation }) {
           )}
 
           <FadeInView delay={80}>
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                activeOpacity={0.82}
-                onPress={() => navigation.navigate('AddTransaction', { type: 'income' })}
-              >
-                <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  <Ionicons name="add-circle-outline" size={17} color="#fff" />
-                  <Text style={styles.actionText}>Income</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+            <View style={styles.buttonGrid}>
+              <View style={styles.buttonGridRow}>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  activeOpacity={0.82}
+                  onPress={() => navigation.navigate('AddTransaction', { type: 'income' })}
+                >
+                  <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                    <Ionicons name="add-circle-outline" size={17} color="#fff" />
+                    <Text style={styles.actionText}>Income</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.actionBtn}
-                activeOpacity={0.82}
-                onPress={() => navigation.navigate('AddTransaction', { type: 'investment' })}
-              >
-                <LinearGradient colors={[colors.accentIndigo, '#4F46E5']} style={styles.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  <Ionicons name="briefcase-outline" size={17} color="#fff" />
-                  <Text style={styles.actionText}>Invest</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  activeOpacity={0.82}
+                  onPress={() => navigation.navigate('AddTransaction', { type: 'expense' })}
+                >
+                  <LinearGradient colors={[colors.dangerLight, colors.danger]} style={styles.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                    <Ionicons name="remove-circle-outline" size={17} color="#fff" />
+                    <Text style={styles.actionText}>Expense</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
 
-              <TouchableOpacity
-                style={styles.actionBtn}
-                activeOpacity={0.82}
-                onPress={() => navigation.navigate('AddTransaction', { type: 'expense' })}
-              >
-                <LinearGradient colors={[colors.dangerLight, colors.danger]} style={styles.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  <Ionicons name="remove-circle-outline" size={17} color="#fff" />
-                  <Text style={styles.actionText}>Expense</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+              <View style={[styles.buttonGridRow, { marginTop: 10 }]}>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  activeOpacity={0.82}
+                  onPress={() => navigation.navigate('AddTransaction', { type: 'investment' })}
+                >
+                  <LinearGradient colors={[colors.accentIndigo, '#4F46E5']} style={styles.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                    <Ionicons name="briefcase-outline" size={17} color="#fff" />
+                    <Text style={styles.actionText}>Invest</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  activeOpacity={0.82}
+                  onPress={() => navigation.navigate('AddLoan')}
+                >
+                  <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.actionGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                    <Ionicons name="swap-horizontal-outline" size={17} color="#fff" />
+                    <Text style={styles.actionText}>Loan</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             </View>
           </FadeInView>
 
@@ -316,62 +399,99 @@ export default function DashboardScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {recentTx.length === 0 ? (
-              <View style={styles.emptyTx}>
-                <Text style={[typography.bodySmall]}>No recent transactions</Text>
-              </View>
-            ) : (
-              recentTx.map((tx, i) => {
-                const isIncome = tx.type === 'income';
-                const isInvestment = tx.type === 'investment';
-                const icon = tx.icon || 'ellipse-outline';
-                
-                const txColor = isIncome ? colors.success : (isInvestment ? colors.accentIndigo : colors.danger);
-                const txBg = isIncome ? colors.success + '20' : (isInvestment ? colors.accentIndigo + '20' : colors.danger + '20');
-                const sign = isIncome ? '+' : (isInvestment ? '-' : '-');
+            <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>
+              {recentTx.length === 0 ? (
+                <View style={styles.emptyTx}>
+                  <Text style={[typography.bodySmall]}>No recent transactions</Text>
+                </View>
+              ) : (
+                recentTx.map((tx, i) => {
+                  const isIncome = tx.type === 'income';
+                  const isInvestment = tx.type === 'investment';
+                  const isLoanModule = tx.type === 'loan' || tx.type === 'repayment';
+                  const icon = tx.icon || 'ellipse-outline';
+                  
+                  let txColor = isIncome ? colors.success : (isInvestment ? colors.accentIndigo : colors.danger);
+                  let txBg = isIncome ? colors.success + '20' : (isInvestment ? colors.accentIndigo + '20' : colors.danger + '20');
 
-                return (
-                  <FadeInView key={`${tx.type}-${tx.id}`} delay={280 + i * 60}>
-                    <View style={styles.txRow}>
-                      <Pressable
-                        style={styles.txMainPress}
-                        onLongPress={() => openActions(tx)}
-                        delayLongPress={380}
-                      >
-                        <View style={[styles.txIcon, { backgroundColor: txBg }]}>
-                          <Ionicons name={icon} size={15} color={txColor} />
-                        </View>
-                        <View style={styles.txInfo}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={styles.txCategory}>{tx.category}</Text>
-                          </View>
-                          <Text style={styles.txMeta}>
-                            {fmtDate(tx.date)}
-                            {tx.notes ? ` · ${tx.notes}` : ''}
-                          </Text>
-                        </View>
-                        <Text
-                          style={[styles.txAmount, { color: txColor }]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
+                  if (isLoanModule) {
+                    if (tx.type === 'loan') {
+                      txColor = '#F59E0B'; // Amber
+                      txBg = '#F59E0B20';
+                    } else if (tx.type === 'repayment') {
+                      if (tx.loanType === 'I Gave') {
+                        txColor = colors.success; // Green for loan recovered
+                        txBg = colors.success + '20';
+                      } else {
+                        txColor = colors.danger; // Red for repayment
+                        txBg = colors.danger + '20';
+                      }
+                    }
+                  }
+                  
+                  const isReceived = tx.type === 'income' || (tx.type === 'loan' && tx.loanType === 'I Borrowed') || (tx.type === 'repayment' && tx.loanType === 'I Gave');
+                  const sign = isReceived ? '+' : '-';
+
+                  // Descriptive Text for Loans & Repayments
+                  let displayCategory = tx.category;
+                  if (tx.type === 'loan') {
+                    displayCategory = tx.loanType === 'I Gave' 
+                      ? `Gave Loan to ${tx.personName}` 
+                      : `Borrowed from ${tx.personName}`;
+                  } else if (tx.type === 'repayment') {
+                    displayCategory = tx.loanType === 'I Gave' 
+                      ? `Loan Repaid by ${tx.personName}` 
+                      : `Repayment to ${tx.personName}`;
+                  }
+
+                  return (
+                    <FadeInView key={`${tx.type}-${tx.id}`} delay={280 + i * 60}>
+                      <View style={styles.txRow}>
+                        <Pressable
+                          style={styles.txMainPress}
+                          onLongPress={() => openActions(tx)}
+                          onPress={() => {
+                            if (isLoanModule) {
+                              navigation.navigate('LoanDetails', { loanId: tx.loanId });
+                            }
+                          }}
+                          delayLongPress={380}
                         >
-                          {sign}
-                          {tx.currency} {fmt(tx.amount)}
-                        </Text>
-                      </Pressable>
-                      <TouchableOpacity
-                        hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-                        style={styles.txMenuHit}
-                        onPress={() => openActions(tx)}
-                        accessibilityLabel="Transaction options"
-                      >
-                        <Ionicons name="ellipsis-vertical" size={18} color={colors.textMuted} />
-                      </TouchableOpacity>
-                    </View>
-                  </FadeInView>
-                );
-              })
-            )}
+                          <View style={[styles.txIcon, { backgroundColor: txBg }]}>
+                            <Ionicons name={icon} size={15} color={txColor} />
+                          </View>
+                          <View style={styles.txInfo}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={styles.txCategory}>{displayCategory}</Text>
+                            </View>
+                            <Text style={styles.txMeta}>
+                              {fmtDate(tx.date)}
+                              {tx.notes ? ` · ${tx.notes}` : ''}
+                            </Text>
+                          </View>
+                          <Text
+                            style={[styles.txAmount, { color: txColor }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                          >
+                            {sign}
+                            {tx.currency} {fmt(tx.amount)}
+                          </Text>
+                        </Pressable>
+                        <TouchableOpacity
+                          hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                          style={styles.txMenuHit}
+                          onPress={() => openActions(tx)}
+                          accessibilityLabel="Transaction options"
+                        >
+                          <Ionicons name="ellipsis-vertical" size={18} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+                    </FadeInView>
+                  );
+                })
+              )}
+            </View>
           </FadeInView>
         </ScrollView>
 
@@ -409,9 +529,74 @@ export default function DashboardScreen({ navigation }) {
           </View>
         </Modal>
 
-        <TransactionActionModal visible={!!actionTx} transaction={actionTx} onClose={() => setActionTx(null)} onEdit={editFromMenu} onDelete={requestDeleteFromMenu} />
+        <TransactionActionModal 
+          visible={!!actionTx} 
+          transaction={actionTx} 
+          onClose={() => setActionTx(null)} 
+          onEdit={editFromMenu} 
+          onRequestDelete={requestDeleteFromMenu} 
+          onStartConversion={(tx) => {
+            setConversionTx(tx);
+            setShowConversionModal(true);
+          }}
+          onGoToDetails={() => {
+            if (actionTx) {
+              const loanId = actionTx.loanId;
+              setActionTx(null);
+              navigation.navigate('LoanDetails', { loanId });
+            }
+          }}
+        />
         <DeleteTransactionConfirmModal visible={!!deleteTx} transaction={deleteTx} onClose={cancelDelete} onConfirm={confirmDelete} deleting={deleting} />
         
+        <ConvertToLoanModal
+          visible={showConversionModal}
+          transaction={conversionTx}
+          onClose={() => {
+            setShowConversionModal(false);
+            setConversionTx(null);
+          }}
+          onConfirm={(conversionType, personName, sourceType, expectedReturnDate, selectedLoanId, notes) => {
+            try {
+              const loanId = convertTransactionToLoanActivity({
+                txType: conversionTx.type,
+                txId: conversionTx.id,
+                conversionType,
+                personName,
+                sourceType,
+                expectedReturnDate,
+                selectedLoanId,
+                notes
+              });
+              
+              setShowConversionModal(false);
+              setConversionTx(null);
+              
+              // Configure Toast
+              setToastMessage('Loan Activity Converted Successfully');
+              setToastAction({
+                label: 'View Loan',
+                onAction: () => {
+                  navigation.navigate('LoanDetails', { loanId });
+                }
+              });
+              setToastVisible(true);
+              
+              loadData();
+            } catch (err) {
+              Alert.alert('Error', err.message);
+            }
+          }}
+        />
+
+        <Toast
+          message={toastMessage}
+          visible={toastVisible}
+          onHide={() => setToastVisible(false)}
+          actionLabel={toastAction?.label}
+          onAction={toastAction?.onAction}
+        />
+
         <ReminderModal 
           visible={showReminderModal} 
           onClose={() => setShowReminderModal(false)} 
@@ -474,17 +659,17 @@ const styles = StyleSheet.create({
   balanceBreakdown: { flexDirection: 'row', gap: 12 },
   breakdownItem: { alignItems: 'flex-end' },
   breakdownLabel: { fontSize: 8, fontFamily: 'Inter_700Bold', marginBottom: 2 },
-  breakdownValue: { ...typography.caption, color: colors.text, fontWeight: '600' },
+  breakdownValue: { ...typography.caption, color: colors.text, fontFamily: 'Inter_600SemiBold' },
 
   emptyWrap: { alignItems: 'center', justifyContent: 'center', padding: 40, marginTop: 20 },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, marginBottom: 12 },
   sectionLabel: { ...typography.sectionLabel, marginBottom: 0 },
-  viewAllText: { ...typography.bodySmall, color: colors.accentTeal, fontWeight: 'bold' },
-  viewAll: { ...typography.bodySmall, color: colors.primary, fontWeight: '700' },
+  viewAllText: { ...typography.bodySmall, color: colors.accentTeal, fontFamily: 'Inter_700Bold' },
+  viewAll: { ...typography.bodySmall, color: colors.primary, fontFamily: 'Inter_700Bold' },
 
   archiveCard: { marginHorizontal: 18, marginBottom: 16, backgroundColor: colors.accentIndigo + '10', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.accentIndigo + '30' },
   archiveHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  archiveTitle: { ...typography.bodyMedium, color: colors.text, flex: 1, fontWeight: '600' },
+  archiveTitle: { ...typography.bodyMedium, color: colors.text, flex: 1, fontFamily: 'Inter_600SemiBold' },
   archiveBtns: { flexDirection: 'row', gap: 10 },
   archiveBtnNow: { flex: 1, backgroundColor: colors.accentIndigo, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   archiveBtnNowText: { ...typography.buttonPrimary, color: '#fff', fontSize: 13 },
@@ -494,8 +679,8 @@ const styles = StyleSheet.create({
   reminderScroll: { paddingHorizontal: 18, paddingBottom: 20, gap: 12 },
   reminderCard: { backgroundColor: colors.cardSolid, padding: 14, borderRadius: 16, width: 140, borderWidth: 1, borderColor: colors.border },
   reminderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  reminderDays: { ...typography.caption, color: colors.accentTeal, fontWeight: 'bold' },
-  reminderTitle: { ...typography.bodyMedium, fontWeight: '600', marginBottom: 4 },
+  reminderDays: { ...typography.caption, color: colors.accentTeal, fontFamily: 'Inter_700Bold' },
+  reminderTitle: { ...typography.bodyMedium, fontFamily: 'Inter_600SemiBold', marginBottom: 4 },
   reminderDate: { ...typography.caption, color: colors.textMuted },
 
   emptyTx: { paddingVertical: 12, alignItems: 'center' },
@@ -541,7 +726,30 @@ const styles = StyleSheet.create({
   modalTitle: { ...typography.h3, marginBottom: 4 },
   modalBtns: { flexDirection: 'row', gap: 10, marginTop: 10 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center', backgroundColor: colors.cardSolid, justifyContent: 'center' },
-  cancelText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
+  cancelText: { color: colors.textSecondary, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   applyBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  applyText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  applyText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 14 },
+  loanRowMultiLine: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  loanRowLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  loanRowLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+  },
+  loanRowValue: {
+    color: '#F59E0B',
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+  },
+  buttonGrid: { paddingHorizontal: 18, marginBottom: 20 },
+  buttonGridRow: { flexDirection: 'row', gap: 11 },
 });

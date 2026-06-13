@@ -117,5 +117,5 @@ const styles = StyleSheet.create({
   input: { flex: 1, padding: 14, color: colors.text, fontSize: 16 },
   eyeBtn: { padding: 12 },
   btn: { backgroundColor: colors.primary, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 30, height: 55, justifyContent: 'center' },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  btnText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 15 },
 });

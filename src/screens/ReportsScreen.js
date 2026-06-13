@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment } from '../services/transactionService';
+import { getLoans, getLoanSummary } from '../services/loanService';
 
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
@@ -70,6 +71,10 @@ export default function ReportsScreen({ navigation }) {
   const [expandedId, setExpandedId] = useState(null);
   const [investFilter, setInvestFilter] = useState('Active'); // 'Active', 'Completed', 'Archived'
 
+  const [loanSummary, setLoanSummary] = useState({ totalGiven: 0, totalBorrowed: 0, totalRecovered: 0, outstandingGiven: 0, outstandingBorrowed: 0 });
+  const [loans, setLoans] = useState([]);
+  const [loanSubTab, setLoanSubTab] = useState('I Gave');
+
   const loadData = () => {
     const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
     if (activeTab === 'Overview') {
@@ -81,6 +86,9 @@ export default function ReportsScreen({ navigation }) {
       setSavingsTrends(getSavingsTrends(archiveMode));
     } else if (activeTab === 'Invest') {
       setInvestmentData(getInvestmentAnalytics(currency));
+    } else if (activeTab === 'Loan') {
+      setLoanSummary(getLoanSummary(currency));
+      setLoans(getLoans({ currency }));
     }
   };
 
@@ -233,23 +241,21 @@ export default function ReportsScreen({ navigation }) {
 
   const renderCategoryTrends = () => {
     const months = Object.keys(categoryTrends).sort().reverse();
-    if (months.length === 0) return <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No trend data available</Text></View>;
 
-    const catMap = {};
-    months.forEach(m => {
-      categoryTrends[m].forEach(item => {
-        if (!catMap[item.category]) catMap[item.category] = { icon: item.icon, totals: {}, sum: 0 };
-        catMap[item.category].totals[m] = item.total;
-        catMap[item.category].sum += item.total;
+    const renderTrendsTable = () => {
+      const catMap = {};
+      months.forEach(m => {
+        categoryTrends[m].forEach(item => {
+          if (!catMap[item.category]) catMap[item.category] = { icon: item.icon, totals: {}, sum: 0 };
+          catMap[item.category].totals[m] = item.total;
+          catMap[item.category].sum += item.total;
+        });
       });
-    });
 
-    const sortedCats = Object.keys(catMap).sort((a,b) => catMap[b].sum - catMap[a].sum);
-    const topCat = sortedCats[0];
+      const sortedCats = Object.keys(catMap).sort((a,b) => catMap[b].sum - catMap[a].sum);
+      const topCat = sortedCats[0];
 
-    return (
-      <FadeInView delay={0}>
-        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
+      return (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 20 }}>
           <GlassCard style={styles.tableCard}>
             <View style={[styles.tr, styles.trHeader]}>
@@ -262,7 +268,7 @@ export default function ReportsScreen({ navigation }) {
                 <View key={cat} style={[styles.tr, isTop && { backgroundColor: accentColor + '10' }]}>
                   <View style={[styles.td, { width: 100, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
                     <Ionicons name={catMap[cat].icon} size={14} color={isTop ? accentColor : colors.textMuted} />
-                    <Text style={[styles.tdText, { textAlign: 'left' }, isTop && { color: accentColor, fontWeight: '700' }]} numberOfLines={1}>{cat}</Text>
+                    <Text style={[styles.tdText, { textAlign: 'left' }, isTop && { color: accentColor, fontFamily: 'Inter_700Bold' }]} numberOfLines={1}>{cat}</Text>
                   </View>
                   {months.map(m => (
                     <Text key={m} style={styles.tdText} numberOfLines={1} adjustsFontSizeToFit>
@@ -274,6 +280,17 @@ export default function ReportsScreen({ navigation }) {
             })}
           </GlassCard>
         </ScrollView>
+      );
+    };
+
+    return (
+      <FadeInView delay={0}>
+        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
+        {months.length === 0 ? (
+          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No trend data available</Text></View>
+        ) : (
+          renderTrendsTable()
+        )}
       </FadeInView>
     );
   };
@@ -295,7 +312,7 @@ export default function ReportsScreen({ navigation }) {
               const data = savingsTrends[m];
               return (
                 <View key={m} style={styles.tr}>
-                  <Text style={[styles.tdText, { flex: 1.2, textAlign: 'left', fontWeight: '700', color: colors.textSecondary }]}>{monthName(m)}</Text>
+                  <Text style={[styles.tdText, { flex: 1.2, textAlign: 'left', fontFamily: 'Inter_700Bold', color: colors.textSecondary }]}>{monthName(m)}</Text>
                   <Text style={[styles.tdText, { flex: 1, color: data.AED.savings >= 0 ? colors.success : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
                     {data.AED.savings > 0 ? '+' : ''}{fmt(data.AED.savings)}
                   </Text>
@@ -401,7 +418,7 @@ export default function ReportsScreen({ navigation }) {
                 }}
               >
                 <Ionicons name="archive-outline" size={16} color={colors.success} />
-                <Text style={{ ...typography.bodyMedium, color: colors.success, fontWeight: '700' }}>View Archived</Text>
+                <Text style={{ ...typography.bodyMedium, color: colors.success, fontFamily: 'Inter_700Bold' }}>View Archived</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity 
@@ -420,7 +437,7 @@ export default function ReportsScreen({ navigation }) {
                 }}
               >
                 <Ionicons name="list-outline" size={16} color={colors.accentIndigo} />
-                <Text style={{ ...typography.bodyMedium, color: colors.accentIndigo, fontWeight: '700' }}>View Active</Text>
+                <Text style={{ ...typography.bodyMedium, color: colors.accentIndigo, fontFamily: 'Inter_700Bold' }}>View Active</Text>
               </TouchableOpacity>
             )}
 
@@ -440,7 +457,7 @@ export default function ReportsScreen({ navigation }) {
               }}
             >
               <Ionicons name="trash-outline" size={16} color={colors.danger} />
-              <Text style={{ ...typography.bodyMedium, color: colors.danger, fontWeight: '700' }}>Clear All</Text>
+              <Text style={{ ...typography.bodyMedium, color: colors.danger, fontFamily: 'Inter_700Bold' }}>Clear All</Text>
             </TouchableOpacity>
           </View>
 
@@ -460,13 +477,13 @@ export default function ReportsScreen({ navigation }) {
                 <GlassCard key={inv.id} style={{ padding: 16, marginBottom: 12 }}>
                   <TouchableOpacity onPress={() => toggleExpand(inv.id)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1, marginRight: 10 }}>
-                      <Text style={{ ...typography.bodyMedium, fontWeight: '700', color: colors.text }}>{inv.name}</Text>
+                      <Text style={{ ...typography.bodyMedium, fontFamily: 'Inter_700Bold', color: colors.text }}>{inv.name}</Text>
                       <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
                         {inv.type} · {inv.tenure_value} {inv.tenure_type}
                       </Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ ...typography.bodyMedium, fontWeight: '700', color: colors.accentIndigo }}>
+                      <Text style={{ ...typography.bodyMedium, fontFamily: 'Inter_700Bold', color: colors.accentIndigo }}>
                         {inv.currency} {fmt(inv.total_invested)}
                       </Text>
                       <Text style={{ ...typography.caption, color: colors.textSecondary, marginTop: 4 }}>
@@ -514,7 +531,7 @@ export default function ReportsScreen({ navigation }) {
                           }}
                         >
                           <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                          <Text style={{ ...typography.bodySmall, color: colors.textSecondary, fontWeight: '700' }}>History</Text>
+                          <Text style={{ ...typography.bodySmall, color: colors.textSecondary, fontFamily: 'Inter_700Bold' }}>History</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity 
@@ -527,13 +544,13 @@ export default function ReportsScreen({ navigation }) {
                             gap: 6, 
                             backgroundColor: colors.cardSolid, 
                             borderWidth: 1,
-                            borderColor: colors.danger + '40',
+                            borderColor: colors.border,
                             paddingVertical: 8, 
                             borderRadius: 8 
                           }}
                         >
                           <Ionicons name="trash-outline" size={14} color={colors.danger} />
-                          <Text style={{ ...typography.bodySmall, color: colors.danger, fontWeight: '700' }}>Delete</Text>
+                          <Text style={{ ...typography.bodySmall, color: colors.danger, fontFamily: 'Inter_700Bold' }}>Delete</Text>
                         </TouchableOpacity>
 
                         {inv.status !== 'Completed' && inv.status !== 'Archived' && (
@@ -551,7 +568,7 @@ export default function ReportsScreen({ navigation }) {
                             }}
                           >
                             <Ionicons name="add-circle-outline" size={14} color="#fff" />
-                            <Text style={{ ...typography.bodySmall, color: '#fff', fontWeight: '700' }}>Add Invest</Text>
+                            <Text style={{ ...typography.bodySmall, color: '#fff', fontFamily: 'Inter_700Bold' }}>Add Invest</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -561,6 +578,172 @@ export default function ReportsScreen({ navigation }) {
                 </GlassCard>
               );
             })
+          )}
+        </View>
+      </FadeInView>
+    );
+  };
+
+  const renderLoans = () => {
+    const activeLoansList = loans.filter(l => l.type === loanSubTab && (l.status === 'Active' || l.status === 'Overdue'));
+    const closedLoansList = loans.filter(l => l.type === loanSubTab && l.status === 'Closed');
+    
+    const repaidBorrowed = Math.max(0, loanSummary.totalBorrowed - loanSummary.outstandingBorrowed);
+
+    const renderLoanItem = (l) => {
+      const isOverdue = l.status === 'Overdue';
+      return (
+        <TouchableOpacity
+          key={l.id}
+          onPress={() => navigation.navigate('LoanDetails', { loanId: l.id })}
+        >
+          <GlassCard style={{ marginBottom: 8, borderRadius: 12 }} contentStyle={{ paddingVertical: 10, paddingHorizontal: 14 }}>
+            <View style={styles.rowBetween}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: l.status === 'Closed' ? colors.textSecondary : colors.text }}>
+                    {l.person_name}
+                  </Text>
+                  {isOverdue && (
+                    <View style={{ backgroundColor: colors.danger + '20', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, borderWidth: 0.5, borderColor: colors.danger }}>
+                      <Text style={{ fontSize: 8, fontFamily: 'Inter_700Bold', color: colors.danger }}>OVERDUE</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.textSecondary, marginTop: 2 }}>
+                  {l.source_type} {l.expected_return_date ? `• Return: ${formatDate(new Date(l.expected_return_date))}` : ''}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: l.status === 'Closed' ? colors.textMuted : (l.type === 'I Gave' ? '#F59E0B' : colors.dangerLight), textDecorationLine: l.status === 'Closed' ? 'line-through' : 'none' }}>
+                  {l.currency} {fmt(l.status === 'Closed' ? l.amount : l.outstandingAmount)}
+                </Text>
+                {l.status !== 'Closed' && (
+                  <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.textMuted, marginTop: 1 }}>
+                    Original: {fmt(l.amount)}
+                  </Text>
+                )}
+              </View>
+            </View>
+          </GlassCard>
+        </TouchableOpacity>
+      );
+    };
+
+    return (
+      <FadeInView delay={0}>
+        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>
+          {renderCurrencyToggle()}
+        </View>
+
+        {/* Separated Summary Cards at the top */}
+        <View style={{ paddingHorizontal: 18, gap: 10, marginBottom: 14 }}>
+          {loanSubTab === 'I Gave' ? (
+            /* I Gave Summary Card */
+            <GlassCard contentStyle={{ padding: 12 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: '#F59E0B', letterSpacing: 0.5, marginBottom: 8 }}>
+                I GAVE (LENDING SUMMARY)
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Inter_700Bold', color: colors.textMuted }}>TOTAL GIVEN</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.text, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                    {currency} {fmt(loanSummary.totalGiven)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Inter_700Bold', color: colors.textMuted }}>TOTAL RECOVERED</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.success, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                    {currency} {fmt(loanSummary.totalRecovered)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Inter_700Bold', color: colors.textMuted }}>OUTSTANDING</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: '#F59E0B', marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                    {currency} {fmt(loanSummary.outstandingGiven)}
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          ) : (
+            /* I Borrowed Summary Card */
+            <GlassCard contentStyle={{ padding: 12 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.dangerLight, letterSpacing: 0.5, marginBottom: 8 }}>
+                I BORROWED (DEBT SUMMARY)
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Inter_700Bold', color: colors.textMuted }}>TOTAL BORROWED</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.text, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                    {currency} {fmt(loanSummary.totalBorrowed)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Inter_700Bold', color: colors.textMuted }}>TOTAL REPAID</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.success, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                    {currency} {fmt(repaidBorrowed)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 7, fontFamily: 'Inter_700Bold', color: colors.textMuted }}>OUTSTANDING</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_700Bold', color: colors.dangerLight, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                    {currency} {fmt(loanSummary.outstandingBorrowed)}
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          )}
+        </View>
+
+        {/* Sub-tab Switch for I Gave / I Borrowed */}
+        <View style={{ flexDirection: 'row', paddingHorizontal: 18, marginBottom: 14, gap: 10 }}>
+          {['I Gave', 'I Borrowed'].map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              style={[
+                styles.tabBtn,
+                loanSubTab === tab && { backgroundColor: '#F59E0B' + '15', borderColor: '#F59E0B' },
+                { flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1.5, alignItems: 'center' }
+              ]}
+              onPress={() => setLoanSubTab(tab)}
+            >
+              <Text style={{
+                fontFamily: loanSubTab === tab ? 'Inter_700Bold' : 'Inter_600SemiBold',
+                fontSize: 13,
+                color: loanSubTab === tab ? '#F59E0B' : colors.textSecondary
+              }}>
+                {tab === 'I Gave' ? 'I Gave (Lending)' : 'I Borrowed (Debt)'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Lists grouped into Active and Closed sections directly */}
+        <View style={{ paddingHorizontal: 18 }}>
+          {activeLoansList.length > 0 && (
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                ACTIVE ({activeLoansList.length})
+              </Text>
+              {activeLoansList.map(l => renderLoanItem(l))}
+            </View>
+          )}
+
+          {closedLoansList.length > 0 && (
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 8 }}>
+                CLOSED ({closedLoansList.length})
+              </Text>
+              {closedLoansList.map(l => renderLoanItem(l))}
+            </View>
+          )}
+
+          {activeLoansList.length === 0 && closedLoansList.length === 0 && (
+            <View style={[styles.emptyWrap, { paddingVertical: 20 }]}>
+              <Text style={{ ...typography.bodySmall, fontFamily: 'Inter_400Regular' }}>
+                No loans found
+              </Text>
+            </View>
           )}
         </View>
       </FadeInView>
@@ -602,7 +785,7 @@ export default function ReportsScreen({ navigation }) {
 
 
         <View style={styles.tabsRow}>
-          {['Overview', 'Expense', 'Savings', 'Invest'].map(tab => (
+          {['Overview', 'Expense', 'Savings', 'Invest', 'Loan'].map(tab => (
             <TouchableOpacity 
               key={tab} 
               style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive, { flex: 1 }]} 
@@ -620,6 +803,7 @@ export default function ReportsScreen({ navigation }) {
           {activeTab === 'Expense' && renderCategoryTrends()}
           {activeTab === 'Savings' && renderSavingsTrends()}
           {activeTab === 'Invest' && renderInvestments()}
+          {activeTab === 'Loan' && renderLoans()}
         </ScrollView>
 
 
@@ -692,7 +876,7 @@ const styles = StyleSheet.create({
   tabTextActive: { color: colors.text, fontFamily: 'Inter_700Bold' },
   
   sectionLabel: { ...typography.label, color: colors.textMuted, letterSpacing: 1 },
-  catNameText: { ...typography.bodySmall, fontWeight: '600' },
+  catNameText: { ...typography.bodySmall, fontFamily: 'Inter_600SemiBold' },
   catValText: { ...typography.caption, color: colors.textSecondary },
   progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' },
   progressBarFill: { height: '100%', borderRadius: 3 },
@@ -715,6 +899,7 @@ const styles = StyleSheet.create({
   usLabel: { ...typography.bodySmall, fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.textSecondary },
   usVal: { ...typography.h3, fontSize: 16, textAlign: 'right' },
   usDivider: { height: 1, backgroundColor: colors.border, marginVertical: 8 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
   // Breakdown
   breakdownCard: { padding: 16, paddingTop: 10 },
@@ -739,14 +924,14 @@ const styles = StyleSheet.create({
   // Modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', padding: 20 },
   modalCard: { padding: 20 },
-  modalTitle: { color: colors.text, fontSize: 17, fontWeight: '700', marginBottom: 20 },
+  modalTitle: { color: colors.text, fontSize: 17, fontFamily: 'Inter_700Bold', marginBottom: 20 },
   datePickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   datePickerBtn: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   datePickerLabel: { ...typography.label, marginBottom: 4 },
   datePickerVal: { ...typography.bodyMedium },
   modalBtns: { flexDirection: 'row', gap: 10, marginTop: 10 },
   cancelBtn: { flex: 1, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
-  cancelText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
+  cancelText: { color: colors.textSecondary, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   applyBtn: { flex: 1, padding: 12, borderRadius: 12, alignItems: 'center' },
-  applyText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  applyText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 14 },
 });
