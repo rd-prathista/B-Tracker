@@ -94,25 +94,44 @@ export default function AddLoanScreen({ navigation, route }) {
     if (loanType === 'I Gave') {
       const balances = getDashboardBalances();
       const currentBalance = balances[currency]?.balance || 0;
-      let headroom = currentBalance;
+
+      let needsValidation = true;
+      let validationAmount = parseFloat(amount);
 
       if (isEdit) {
         const originalLoan = getLoanById(loanId);
-        if (originalLoan && originalLoan.currency === currency) {
-          if (originalLoan.type === 'I Gave') {
-            headroom += originalLoan.amount;
-          } else if (originalLoan.type === 'I Borrowed') {
-            headroom -= originalLoan.amount;
+        if (originalLoan && originalLoan.currency === currency && originalLoan.type === 'I Gave') {
+          const oldAmount = originalLoan.amount;
+          const newAmount = parseFloat(amount);
+          if (newAmount <= oldAmount) {
+            needsValidation = false;
+          } else {
+            validationAmount = newAmount - oldAmount;
           }
         }
       }
 
-      if (parseFloat(amount) > headroom) {
-        Alert.alert(
-          'Insufficient Balance',
-          `You do not have enough available balance. Maximum allowed is ${currency} ${headroom.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
-        );
-        return;
+      if (needsValidation) {
+        if (currentBalance < 0) {
+          Alert.alert(
+            'Insufficient Balance',
+            'Available balance is negative. Cannot create or increase a loan amount.'
+          );
+          return;
+        } else if (validationAmount > currentBalance) {
+          if (isEdit) {
+            Alert.alert(
+              'Insufficient Balance',
+              `Insufficient available balance for the additional loan amount. Maximum allowed increase is ${currency} ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+            );
+          } else {
+            Alert.alert(
+              'Insufficient Balance',
+              `You do not have enough available balance. Maximum allowed is ${currency} ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+            );
+          }
+          return;
+        }
       }
     }
 
