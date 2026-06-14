@@ -5,20 +5,28 @@ export const SUPPORTED_CURRENCIES = ['AED', 'INR'];
 /**
  * Add a new transaction (income or expense) with its own currency
  */
-export const addTransaction = (type, amount, currency, date, category, notes = '', attachmentUri = null) => {
+export const addTransaction = (type, amount, currency, date, category, notes = '', attachmentUri = null, owner = 'OTHER') => {
   const db = getDb();
   let table;
-  if (type === 'income') table = 'income';
-  else if (type === 'expense') table = 'expenses';
-  else return;
+  let ownerCol;
+  if (type === 'income') {
+    table = 'income';
+    ownerCol = 'income_source';
+  } else if (type === 'expense') {
+    table = 'expenses';
+    ownerCol = 'funded_by';
+  } else {
+    return;
+  }
 
-  db.runSync(`INSERT INTO ${table} (amount, currency, date, category, notes, attachment_uri, is_archived) VALUES (?, ?, ?, ?, ?, ?, 0)`, [
+  db.runSync(`INSERT INTO ${table} (amount, currency, date, category, notes, attachment_uri, is_archived, ${ownerCol}) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`, [
     parseFloat(amount),
     currency,
     date,
     category,
     notes,
-    attachmentUri
+    attachmentUri,
+    owner || 'OTHER'
   ]);
 };
 
@@ -44,16 +52,16 @@ export const getNextDueDate = (dateStr, tenureType) => {
 };
 
 export const addInvestment = (data) => {
-  const { type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, start_date, notes } = data;
+  const { type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, start_date, notes, funded_by } = data;
   const db = getDb();
   
   const nextDue = getNextDueDate(start_date, tenure_type);
   
   // 1. Create Master Record
   const result = db.runSync(
-    `INSERT INTO investments (type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, installments_paid, total_invested, next_due_date, start_date, notes) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
-    [type, name, currency, parseFloat(recurring_amount), parseInt(tenure_value), tenure_type, target_amount ? parseFloat(target_amount) : null, parseFloat(recurring_amount), nextDue, start_date, notes]
+    `INSERT INTO investments (type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, installments_paid, total_invested, next_due_date, start_date, notes, funded_by) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+    [type, name, currency, parseFloat(recurring_amount), parseInt(tenure_value), tenure_type, target_amount ? parseFloat(target_amount) : null, parseFloat(recurring_amount), nextDue, start_date, notes, funded_by || 'OTHER']
   );
   
   const masterId = result.lastInsertRowId;
@@ -119,12 +127,13 @@ export const updateContribution = (id, { amount, date, notes, attachmentUri, mas
   const mParams = [newTotal];
 
   if (masterUpdates) {
-    const { name, category, tenure_value, tenure_type, target_amount } = masterUpdates;
+    const { name, category, tenure_value, tenure_type, target_amount, funded_by } = masterUpdates;
     if (name) { mUpdateSql += ', name = ?'; mParams.push(name); }
     if (category) { mUpdateSql += ', type = ?'; mParams.push(category); }
     if (tenure_value) { mUpdateSql += ', tenure_value = ?'; mParams.push(parseInt(tenure_value)); }
     if (tenure_type) { mUpdateSql += ', tenure_type = ?'; mParams.push(tenure_type); }
     if (target_amount !== undefined) { mUpdateSql += ', target_amount = ?'; mParams.push(target_amount ? parseFloat(target_amount) : null); }
+    if (funded_by !== undefined) { mUpdateSql += ', funded_by = ?'; mParams.push(funded_by || 'OTHER'); }
   }
 
   mParams.push(contribution.investment_id);
@@ -212,6 +221,14 @@ export const updateTransaction = (type, id, data) => {
   if (data.category) { sets.push('category = ?'); params.push(data.category); }
   if (data.notes !== undefined) { sets.push('notes = ?'); params.push(data.notes); }
   if (data.attachmentUri !== undefined) { sets.push('attachment_uri = ?'); params.push(data.attachmentUri); }
+
+  if (type === 'income' && data.owner !== undefined) {
+    sets.push('income_source = ?');
+    params.push(data.owner || 'OTHER');
+  } else if (type === 'expense' && data.owner !== undefined) {
+    sets.push('funded_by = ?');
+    params.push(data.owner || 'OTHER');
+  }
 
   if (sets.length === 0) return;
   params.push(id);
@@ -328,43 +345,62 @@ export const getActiveInvestmentsSummary = () => {
   `);
 };
 
-export const getInvestmentAnalytics = (currency) => {
+export const getInvestmentAnalytics = (currency, ownerFilter) => {
   const db = getDb();
+  const ownerClause = ownerFilter && ownerFilter !== 'ALL' ? ' AND inv.funded_by = ?' : '';
+  const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter] : [];
   
   const activeInvestments = db.getAllSync(
     `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
      FROM investments inv 
      LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
-     WHERE inv.currency = ? AND (inv.status = 'Active' OR inv.status IS NULL) ORDER BY inv.created_at DESC`,
-    [currency]
+     WHERE inv.currency = ? AND (inv.status = 'Active' OR inv.status IS NULL)${ownerClause} ORDER BY inv.created_at DESC`,
+    [currency, ...ownerParams]
   );
 
   const completedInvestments = db.getAllSync(
     `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
      FROM investments inv 
      LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
-     WHERE inv.currency = ? AND inv.status = 'Completed' ORDER BY inv.created_at DESC`,
-    [currency]
+     WHERE inv.currency = ? AND inv.status = 'Completed'${ownerClause} ORDER BY inv.created_at DESC`,
+    [currency, ...ownerParams]
   );
 
   const archivedInvestments = db.getAllSync(
     `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
      FROM investments inv 
      LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
-     WHERE inv.currency = ? AND inv.status = 'Archived' ORDER BY inv.created_at DESC`,
-    [currency]
+     WHERE inv.currency = ? AND inv.status = 'Archived'${ownerClause} ORDER BY inv.created_at DESC`,
+    [currency, ...ownerParams]
   );
 
   const totalInvested = db.getFirstSync(
-    `SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ?`,
-    [currency]
+    `SELECT SUM(ic.amount) as total 
+     FROM investment_contributions ic
+     JOIN investments inv ON ic.investment_id = inv.id
+     WHERE ic.currency = ?${ownerClause}`,
+    [currency, ...ownerParams]
   )?.total || 0;
+
+  const investmentBreakdown = db.getAllSync(`
+    SELECT inv.funded_by, SUM(ic.amount) as total 
+    FROM investment_contributions ic
+    JOIN investments inv ON ic.investment_id = inv.id
+    WHERE ic.currency = ?${ownerClause}
+    GROUP BY inv.funded_by
+  `, [currency, ...ownerParams]);
+
+  const investmentByFunding = { SELF: 0, SPOUSE: 0, OTHER: 0 };
+  investmentBreakdown.forEach(row => {
+    investmentByFunding[row.funded_by || 'OTHER'] = row.total;
+  });
 
   return {
     activeInvestments,
     completedInvestments,
     archivedInvestments,
-    totalInvested
+    totalInvested,
+    investmentByFunding
   };
 };
 
@@ -524,7 +560,7 @@ export const toggleArchiveStatus = (type, id, isArchived) => {
   db.runSync(`UPDATE ${table} SET is_archived = ? WHERE id = ?`, [isArchived ? 1 : 0, id]);
 };
 
-export const getReportData = (currency, startDate, endDate, search, archiveMode = 'Active') => {
+export const getReportData = (currency, startDate, endDate, search, archiveMode = 'Active', ownerFilter) => {
   const db = getDb();
   const baseParams = [currency, startDate, endDate];
   let searchClause = '';
@@ -538,44 +574,85 @@ export const getReportData = (currency, startDate, endDate, search, archiveMode 
   const arch = archiveMode === 'Archived' ? ' AND is_archived = 1' : archiveMode === 'Active' ? ' AND is_archived = 0' : '';
   const archE = archiveMode === 'Archived' ? ' AND e.is_archived = 1' : archiveMode === 'Active' ? ' AND e.is_archived = 0' : '';
 
-  const incomeRes = db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}`, [...baseParams, ...searchParams]);
+  const ownerClauseI = ownerFilter && ownerFilter !== 'ALL' ? ' AND income_source = ?' : '';
+  const ownerClauseE = ownerFilter && ownerFilter !== 'ALL' ? ' AND funded_by = ?' : '';
+  const ownerClauseIc = ownerFilter && ownerFilter !== 'ALL' ? ' AND inv.funded_by = ?' : '';
+  const ownerClauseEB = ownerFilter && ownerFilter !== 'ALL' ? ' AND e.funded_by = ?' : '';
+  const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter] : [];
+
+  const incomeRes = db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}${ownerClauseI}`, [...baseParams, ...searchParams, ...ownerParams]);
   const totalIncome = incomeRes?.total || 0;
   
-  const expenseRes = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}`, [...baseParams, ...searchParams]);
+  const expenseRes = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}${ownerClauseE}`, [...baseParams, ...searchParams, ...ownerParams]);
   const totalExpense = expenseRes?.total || 0;
 
-  const investRes = db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND contribution_date >= ? AND contribution_date <= ?${searchClause.replace(/date/g, 'contribution_date')}${arch}`, [...baseParams, ...searchParams]);
+  const investRes = db.getFirstSync(`
+    SELECT SUM(ic.amount) as total 
+    FROM investment_contributions ic
+    JOIN investments inv ON ic.investment_id = inv.id
+    WHERE ic.currency = ? AND ic.contribution_date >= ? AND ic.contribution_date <= ?${searchClause.replace(/date/g, 'ic.contribution_date')}${arch.replace(/is_archived/g, 'ic.is_archived')}${ownerClauseIc}`, 
+    [...baseParams, ...searchParams, ...ownerParams]
+  );
   const totalInvestment = investRes?.total || 0;
 
   const breakdown = db.getAllSync(`
     SELECT e.category, SUM(e.amount) as total, c.icon 
     FROM expenses e
     LEFT JOIN categories c ON e.category = c.name AND c.type = 'expense'
-    WHERE e.currency = ? AND e.date >= ? AND e.date <= ?${searchClause.replace(/category/g, 'e.category').replace(/notes/g, 'e.notes').replace(/amount/g, 'e.amount').replace(/currency/g, 'e.currency').replace(/date/g, 'e.date')}${archE}
+    WHERE e.currency = ? AND e.date >= ? AND e.date <= ?${searchClause.replace(/category/g, 'e.category').replace(/notes/g, 'e.notes').replace(/amount/g, 'e.amount').replace(/currency/g, 'e.currency').replace(/date/g, 'e.date')}${archE}${ownerClauseEB}
     GROUP BY e.category
     ORDER BY total DESC
-  `, [...baseParams, ...searchParams]);
+  `, [...baseParams, ...searchParams, ...ownerParams]);
+
+  const incomeBreakdown = db.getAllSync(`
+    SELECT income_source, SUM(amount) as total 
+    FROM income 
+    WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}${ownerClauseI}
+    GROUP BY income_source
+  `, [...baseParams, ...searchParams, ...ownerParams]);
+
+  const expenseBreakdown = db.getAllSync(`
+    SELECT funded_by, SUM(amount) as total 
+    FROM expenses 
+    WHERE currency = ? AND date >= ? AND date <= ?${searchClause}${arch}${ownerClauseE}
+    GROUP BY funded_by
+  `, [...baseParams, ...searchParams, ...ownerParams]);
+
+  const incomeBySource = { SELF: 0, SPOUSE: 0, OTHER: 0 };
+  incomeBreakdown.forEach(row => {
+    incomeBySource[row.income_source || 'OTHER'] = row.total;
+  });
+
+  const expenseByFunding = { SELF: 0, SPOUSE: 0, OTHER: 0 };
+  expenseBreakdown.forEach(row => {
+    expenseByFunding[row.funded_by || 'OTHER'] = row.total;
+  });
   
   return {
     totalIncome,
     totalExpense,
     totalInvestment,
     savings: totalIncome - totalExpense,
-    breakdown: breakdown.map(b => ({ ...b, percentage: totalExpense > 0 ? (b.total / totalExpense) * 100 : 0 }))
+    breakdown: breakdown.map(b => ({ ...b, percentage: totalExpense > 0 ? (b.total / totalExpense) * 100 : 0 })),
+    incomeBySource,
+    expenseByFunding
   };
 };
 
-export const getCategoryTrends = (currency, archiveMode = 'Active') => {
+export const getCategoryTrends = (currency, archiveMode = 'Active', ownerFilter) => {
   const db = getDb();
   const archE = archiveMode === 'Archived' ? ' AND e.is_archived = 1' : archiveMode === 'Active' ? ' AND e.is_archived = 0' : '';
+  const ownerClause = ownerFilter && ownerFilter !== 'ALL' ? ' AND e.funded_by = ?' : '';
+  const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter] : [];
+
   const rows = db.getAllSync(`
     SELECT e.category, strftime('%Y-%m', e.date) as month, SUM(e.amount) as total, c.icon
     FROM expenses e
     LEFT JOIN categories c ON e.category = c.name AND c.type = 'expense'
-    WHERE e.currency = ? AND e.date >= date('now', 'start of month', '-5 months')${archE}
+    WHERE e.currency = ? AND e.date >= date('now', 'start of month', '-5 months')${archE}${ownerClause}
     GROUP BY e.category, month
     ORDER BY month DESC, total DESC
-  `, [currency]);
+  `, [currency, ...ownerParams]);
   const trends = {};
   rows.forEach(row => {
     if (!trends[row.month]) trends[row.month] = [];
@@ -584,17 +661,26 @@ export const getCategoryTrends = (currency, archiveMode = 'Active') => {
   return trends;
 };
 
-export const getSavingsTrends = (archiveMode = 'Active') => {
+export const getSavingsTrends = (archiveMode = 'Active', ownerFilter) => {
   const db = getDb();
-  const archInc = archiveMode === 'Archived' ? ' WHERE is_archived = 1' : archiveMode === 'Active' ? ' WHERE is_archived = 0' : '';
-  const archExp = archiveMode === 'Archived' ? ' WHERE is_archived = 1' : archiveMode === 'Active' ? ' WHERE is_archived = 0' : '';
+  const archInc = archiveMode === 'Archived' ? ' AND is_archived = 1' : archiveMode === 'Active' ? ' AND is_archived = 0' : '';
+  const archExp = archiveMode === 'Archived' ? ' AND is_archived = 1' : archiveMode === 'Active' ? ' AND is_archived = 0' : '';
+
+  const ownerClauseInc = ownerFilter && ownerFilter !== 'ALL' ? ' AND income_source = ?' : '';
+  const ownerClauseExp = ownerFilter && ownerFilter !== 'ALL' ? ' AND funded_by = ?' : '';
+  const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter, ownerFilter] : [];
+
   const rows = db.getAllSync(`
     SELECT strftime('%Y-%m', date) as month, currency, SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as totalIncome, SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as totalExpense
-    FROM (SELECT amount, currency, date, 'income' as type FROM income${archInc} UNION ALL SELECT amount, currency, date, 'expense' as type FROM expenses${archExp})
+    FROM (
+      SELECT amount, currency, date, 'income' as type FROM income WHERE 1=1${archInc}${ownerClauseInc}
+      UNION ALL 
+      SELECT amount, currency, date, 'expense' as type FROM expenses WHERE 1=1${archExp}${ownerClauseExp}
+    )
     WHERE date >= date('now', 'start of month', '-5 months')
     GROUP BY month, currency
     ORDER BY month DESC
-  `);
+  `, ownerParams);
   const trends = {};
   rows.forEach(row => {
     if (!trends[row.month]) trends[row.month] = { AED: { savings: 0 }, INR: { savings: 0 } };

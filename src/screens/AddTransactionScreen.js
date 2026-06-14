@@ -59,6 +59,12 @@ export default function AddTransactionScreen({ navigation, route }) {
   const isContribution = isInvestment && mode === 'contribution';
   const preSelectedInvestmentId = routeParams.investmentId;
 
+  const OWNER_OPTIONS = [
+    { label: 'Prathista', value: 'SELF' },
+    { label: 'Praveen', value: 'SPOUSE' },
+    { label: 'Other', value: 'OTHER' }
+  ];
+
   const isIncome = type === 'income';
   const saveLockRef = useRef(false);
 
@@ -94,6 +100,7 @@ export default function AddTransactionScreen({ navigation, route }) {
   const [isSaving, setIsSaving] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
   const [currencyMode, setCurrencyMode] = useState('AED');
+  const [ownership, setOwnership] = useState('OTHER');
 
 
   const accentColor = isIncome ? colors.success : (isInvestment ? colors.accentIndigo : colors.danger);
@@ -129,9 +136,11 @@ export default function AddTransactionScreen({ navigation, route }) {
           setTenureValue(String(master.tenure_value || ''));
           setTenureType(master.tenure_type || 'Months');
           setTargetAmount(master.target_amount ? String(master.target_amount) : '');
+          setOwnership(master.funded_by || 'OTHER');
         }
       } else {
         setCategory(t.category || '');
+        setOwnership(t.income_source || t.funded_by || 'OTHER');
       }
       setNotes(t.notes ?? '');
       try {
@@ -146,6 +155,7 @@ export default function AddTransactionScreen({ navigation, route }) {
     setDate(new Date());
     setCategory('');
     setNotes('');
+    setOwnership('OTHER');
     setAttachmentUris([]);
     saveLockRef.current = false;
     setIsSaving(false);
@@ -252,6 +262,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               tenure_value: tenureValue,
               tenure_type: tenureType,
               target_amount: targetAmount,
+              funded_by: ownership,
             }
           });
         } else {
@@ -262,6 +273,7 @@ export default function AddTransactionScreen({ navigation, route }) {
             category,
             notes,
             attachmentUri: attachmentStr,
+            owner: ownership,
           });
         }
         setToastMessage('✓ Entry updated successfully');
@@ -277,6 +289,7 @@ export default function AddTransactionScreen({ navigation, route }) {
             tenure_type: tenureType,
             target_amount: targetAmount ? parseFloat(targetAmount) : null,
             notes,
+            funded_by: ownership,
           });
           setToastMessage('✓ Investment saved successfully');
         } else {
@@ -284,7 +297,7 @@ export default function AddTransactionScreen({ navigation, route }) {
           setToastMessage('✓ Contribution added successfully');
         }
       } else {
-        addTransaction(type, amount, currency, isoDate, category, notes, attachmentStr);
+        addTransaction(type, amount, currency, isoDate, category, notes, attachmentStr, ownership);
         setToastMessage(isIncome ? '✓ Income saved successfully' : '✓ Expense saved successfully');
       }
       
@@ -532,6 +545,36 @@ export default function AddTransactionScreen({ navigation, route }) {
                 </TouchableOpacity>
               </FadeInView>
             )}
+
+            {(!isInvestment || mode === 'setup' || isEdit) && (
+              <FadeInView delay={200} style={{ marginBottom: 20 }}>
+                <Text style={styles.sectionLabel}>{isIncome ? 'INCOME SOURCE' : 'FUNDED BY'}</Text>
+                <View style={styles.typeToggleRow}>
+                  {OWNER_OPTIONS.map((opt) => {
+                    const isSelected = ownership === opt.value;
+                    return (
+                      <TouchableOpacity
+                        key={opt.value}
+                        style={[
+                          styles.typeBtn,
+                          isSelected && { backgroundColor: accentColor }
+                        ]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setOwnership(opt.value);
+                        }}
+                        disabled={isSaving}
+                      >
+                        <Text style={[styles.typeText, isSelected && styles.typeTextActive]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </FadeInView>
+            )}
+
             <FadeInView delay={240}>
               <Text style={styles.sectionLabel}>NOTES (OPTIONAL)</Text>
               <TextInput

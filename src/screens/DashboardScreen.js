@@ -556,7 +556,7 @@ export default function DashboardScreen({ navigation }) {
             setShowConversionModal(false);
             setConversionTx(null);
           }}
-          onConfirm={(conversionType, personName, sourceType, expectedReturnDate, selectedLoanId, notes) => {
+          onConfirm={(conversionType, personName, sourceType, expectedReturnDate, selectedLoanId, notes, fundedBy) => {
             try {
               const loanId = convertTransactionToLoanActivity({
                 txType: conversionTx.type,
@@ -566,7 +566,8 @@ export default function DashboardScreen({ navigation }) {
                 sourceType,
                 expectedReturnDate,
                 selectedLoanId,
-                notes
+                notes,
+                fundedBy
               });
               
               setShowConversionModal(false);

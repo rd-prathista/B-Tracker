@@ -46,11 +46,11 @@ export const updateLoanStatusAndOutstanding = (db, loanId) => {
  */
 export const addLoan = (data) => {
   const db = getDb();
-  const { personName, type, sourceType, amount, currency, startDate, expectedReturnDate, notes } = data;
+  const { personName, type, sourceType, amount, currency, startDate, expectedReturnDate, notes, fundedBy } = data;
 
   const result = db.runSync(
-    `INSERT INTO loans (person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0)`,
+    `INSERT INTO loans (person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived, funded_by) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0, ?)`,
     [
       personName,
       type, // 'I Gave' or 'I Borrowed'
@@ -59,7 +59,8 @@ export const addLoan = (data) => {
       currency,
       startDate,
       expectedReturnDate || null,
-      notes || null
+      notes || null,
+      fundedBy || 'OTHER'
     ]
   );
 
@@ -84,6 +85,7 @@ export const updateLoan = (id, data) => {
   if (data.startDate !== undefined) { sets.push('start_date = ?'); params.push(data.startDate); }
   if (data.expectedReturnDate !== undefined) { sets.push('expected_return_date = ?'); params.push(data.expectedReturnDate || null); }
   if (data.notes !== undefined) { sets.push('notes = ?'); params.push(data.notes || null); }
+  if (data.fundedBy !== undefined) { sets.push('funded_by = ?'); params.push(data.fundedBy || 'OTHER'); }
 
   if (sets.length > 0) {
     params.push(id);
@@ -106,7 +108,7 @@ export const deleteLoan = (id) => {
  */
 export const getLoans = (filters = {}) => {
   const db = getDb();
-  const { status, currency } = filters;
+  const { status, currency, ownerFilter } = filters;
   
   let query = 'SELECT * FROM loans WHERE 1=1';
   const params = [];
@@ -119,6 +121,11 @@ export const getLoans = (filters = {}) => {
   if (currency && currency !== 'all') {
     query += ' AND currency = ?';
     params.push(currency);
+  }
+
+  if (ownerFilter && ownerFilter !== 'ALL') {
+    query += ' AND funded_by = ?';
+    params.push(ownerFilter);
   }
 
   query += ' ORDER BY start_date DESC';
@@ -234,20 +241,24 @@ export const deleteRepayment = (repaymentId) => {
 /**
  * Get summary of all loans for Reports or Dashboard
  */
-export const getLoanSummary = (currency) => {
+export const getLoanSummary = (currency, ownerFilter) => {
   const db = getDb();
   const cur = currency || 'AED';
 
+  const ownerClause = ownerFilter && ownerFilter !== 'ALL' ? ' AND funded_by = ?' : '';
+  const ownerClauseJoined = ownerFilter && ownerFilter !== 'ALL' ? ' AND l.funded_by = ?' : '';
+  const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter] : [];
+
   // 1. Total Given (I Gave loans original amount)
   const totalGiven = db.getFirstSync(
-    "SELECT SUM(amount) as total FROM loans WHERE type = 'I Gave' AND currency = ?",
-    [cur]
+    `SELECT SUM(amount) as total FROM loans WHERE type = 'I Gave' AND currency = ?${ownerClause}`,
+    [cur, ...ownerParams]
   )?.total || 0;
 
   // 2. Total Borrowed (I Borrowed loans original amount)
   const totalBorrowed = db.getFirstSync(
-    "SELECT SUM(amount) as total FROM loans WHERE type = 'I Borrowed' AND currency = ?",
-    [cur]
+    `SELECT SUM(amount) as total FROM loans WHERE type = 'I Borrowed' AND currency = ?${ownerClause}`,
+    [cur, ...ownerParams]
   )?.total || 0;
 
   // 3. Total Recovered (repayments received for "I Gave" loans)
@@ -255,8 +266,8 @@ export const getLoanSummary = (currency) => {
     `SELECT SUM(r.amount) as total 
      FROM loan_repayments r 
      JOIN loans l ON r.loan_id = l.id 
-     WHERE l.type = 'I Gave' AND l.currency = ?`,
-    [cur]
+     WHERE l.type = 'I Gave' AND l.currency = ?${ownerClauseJoined}`,
+    [cur, ...ownerParams]
   )?.total || 0;
 
   // 4. Repaid Borrowed (repayments paid for "I Borrowed" loans)
@@ -264,8 +275,8 @@ export const getLoanSummary = (currency) => {
     `SELECT SUM(r.amount) as total 
      FROM loan_repayments r 
      JOIN loans l ON r.loan_id = l.id 
-     WHERE l.type = 'I Borrowed' AND l.currency = ?`,
-    [cur]
+     WHERE l.type = 'I Borrowed' AND l.currency = ?${ownerClauseJoined}`,
+    [cur, ...ownerParams]
   )?.total || 0;
 
   // Outstanding Given (I Gave outstanding)
@@ -274,12 +285,26 @@ export const getLoanSummary = (currency) => {
   // Outstanding Borrowed (I Borrowed outstanding)
   const outstandingBorrowed = Math.max(0, totalBorrowed - totalRepaidBorrowed);
 
+  // Loans by funding source breakdown (Overview/Loan tab)
+  const loanBreakdown = db.getAllSync(`
+    SELECT funded_by, SUM(amount) as total
+    FROM loans
+    WHERE currency = ?${ownerClause}
+    GROUP BY funded_by
+  `, [cur, ...ownerParams]);
+
+  const loansByFunding = { SELF: 0, SPOUSE: 0, OTHER: 0 };
+  loanBreakdown.forEach(row => {
+    loansByFunding[row.funded_by || 'OTHER'] = row.total;
+  });
+
   return {
     totalGiven,
     totalBorrowed,
     totalRecovered,
     outstandingGiven,
-    outstandingBorrowed
+    outstandingBorrowed,
+    loansByFunding
   };
 };
 
@@ -304,7 +329,8 @@ export const convertTransactionToLoanActivity = (data) => {
     sourceType, 
     expectedReturnDate, 
     selectedLoanId, 
-    notes 
+    notes,
+    fundedBy
   } = data;
 
   const table = txType === 'income' ? 'income' : 'expenses';
@@ -315,6 +341,8 @@ export const convertTransactionToLoanActivity = (data) => {
     const tx = db.getFirstSync(`SELECT * FROM ${table} WHERE id = ?`, [txId]);
     if (!tx) throw new Error('Transaction not found');
 
+    const txOwner = fundedBy || tx.income_source || tx.funded_by || 'OTHER';
+
     if (conversionType === 'Loan Given' || conversionType === 'Loan Borrowed') {
       if (!personName || !personName.trim()) throw new Error('Person Name is required');
       if (!sourceType) throw new Error('Source Type is required');
@@ -322,8 +350,8 @@ export const convertTransactionToLoanActivity = (data) => {
       const loanType = conversionType === 'Loan Given' ? 'I Gave' : 'I Borrowed';
 
       const result = db.runSync(
-        `INSERT INTO loans (person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0)`,
+        `INSERT INTO loans (person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived, funded_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0, ?)`,
         [
           personName.trim(),
           loanType,
@@ -332,7 +360,8 @@ export const convertTransactionToLoanActivity = (data) => {
           tx.currency,
           tx.date,
           expectedReturnDate || null,
-          notes || tx.notes || `Converted to ${conversionType}`
+          notes || tx.notes || `Converted to ${conversionType}`,
+          txOwner
         ]
       );
       loanId = result.lastInsertRowId;

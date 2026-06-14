@@ -132,6 +132,7 @@ export function TransactionActionModal({ visible, transaction, onClose, onEdit, 
   const [expectedReturnDate, setExpectedReturnDate] = React.useState(null);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [ownership, setOwnership] = React.useState('OTHER');
 
   // Repayment selection states
   const [loans, setLoans] = React.useState([]);
@@ -153,6 +154,7 @@ export function TransactionActionModal({ visible, transaction, onClose, onEdit, 
       setNotes(transaction.notes || '');
       setShowDatePicker(false);
       setIsSaving(false);
+      setOwnership(transaction.income_source || transaction.funded_by || 'OTHER');
 
       // Fetch existing loans for selector
       try {
@@ -213,7 +215,8 @@ export function TransactionActionModal({ visible, transaction, onClose, onEdit, 
                 sourceType,
                 dateStr,
                 selectedLoanId,
-                notes.trim()
+                notes.trim(),
+                ownership
               );
             } catch (err) {
               setIsSaving(false);
@@ -395,6 +398,32 @@ export function TransactionActionModal({ visible, transaction, onClose, onEdit, 
                         }}
                       />
                     )}
+
+                    <Text style={styles.inputLabel}>FUNDED BY</Text>
+                    <View style={styles.dropdownRow}>
+                      {[
+                        { label: 'Prathista', value: 'SELF' },
+                        { label: 'Praveen', value: 'SPOUSE' },
+                        { label: 'Other', value: 'OTHER' }
+                      ].map(opt => (
+                        <TouchableOpacity
+                          key={opt.value}
+                          style={[
+                            styles.dropdownBtn,
+                            ownership === opt.value && styles.dropdownBtnActive
+                          ]}
+                          onPress={() => setOwnership(opt.value)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[
+                            styles.dropdownBtnText,
+                            ownership === opt.value && styles.dropdownBtnTextActive
+                          ]}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   </View>
                 )}
 

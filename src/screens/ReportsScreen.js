@@ -53,6 +53,7 @@ export default function ReportsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [currency, setCurrency] = useState('AED');
   const [dateFilter, setDateFilter] = useState('This Month');
+  const [ownerFilter, setOwnerFilter] = useState('ALL');
   
   // Custom Date Modal State
   const [showCustomModal, setShowCustomModal] = useState(false);
@@ -78,17 +79,17 @@ export default function ReportsScreen({ navigation }) {
   const loadData = () => {
     const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
     if (activeTab === 'Overview') {
-      setOverviewData(getReportData(currency, start, end, searchQuery, archiveMode));
-      setInvestmentData(getInvestmentAnalytics(currency));
+      setOverviewData(getReportData(currency, start, end, searchQuery, archiveMode, ownerFilter));
+      setInvestmentData(getInvestmentAnalytics(currency, ownerFilter));
     } else if (activeTab === 'Expense') {
-      setCategoryTrends(getCategoryTrends(currency, archiveMode));
+      setCategoryTrends(getCategoryTrends(currency, archiveMode, ownerFilter));
     } else if (activeTab === 'Savings') {
-      setSavingsTrends(getSavingsTrends(archiveMode));
+      setSavingsTrends(getSavingsTrends(archiveMode, ownerFilter));
     } else if (activeTab === 'Invest') {
-      setInvestmentData(getInvestmentAnalytics(currency));
+      setInvestmentData(getInvestmentAnalytics(currency, ownerFilter));
     } else if (activeTab === 'Loan') {
-      setLoanSummary(getLoanSummary(currency));
-      setLoans(getLoans({ currency }));
+      setLoanSummary(getLoanSummary(currency, ownerFilter));
+      setLoans(getLoans({ currency, ownerFilter }));
     }
   };
 
@@ -97,7 +98,7 @@ export default function ReportsScreen({ navigation }) {
     setExpandedId(expandedId === id ? null : id);
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [activeTab, currency, dateFilter, customStart, customEnd, archiveMode, searchQuery]));
+  useFocusEffect(useCallback(() => { loadData(); }, [activeTab, currency, dateFilter, customStart, customEnd, archiveMode, searchQuery, ownerFilter]));
 
 
   const accentColor = currency === 'AED' ? colors.primary : colors.accentTeal;
@@ -161,6 +162,43 @@ export default function ReportsScreen({ navigation }) {
       ))}
     </View>
   );
+
+  const renderOwnershipBreakdown = (breakdownData, total, title) => {
+    if (!breakdownData) return null;
+    const items = [
+      { label: 'Prathista', value: breakdownData.SELF || 0, color: colors.successLight || colors.success },
+      { label: 'Praveen', value: breakdownData.SPOUSE || 0, color: colors.accentTeal },
+      { label: 'Other', value: breakdownData.OTHER || 0, color: colors.textMuted }
+    ];
+    items.sort((a, b) => b.value - a.value);
+
+    return (
+      <View style={{ marginTop: 20 }}>
+        <Text style={[typography.sectionLabel, { marginBottom: 12 }]}>{title}</Text>
+        <GlassCard style={styles.breakdownCard}>
+          {items.map((item, idx) => {
+            const pct = total > 0 ? (item.value / total) * 100 : 0;
+            return (
+              <View key={item.label} style={[styles.breakdownRow, idx === 0 && { marginTop: 4 }]}>
+                <View style={styles.bRowTop}>
+                  <View style={[styles.bIconWrap, { backgroundColor: item.color + '15' }]}>
+                    <Ionicons name="person-outline" size={12} color={item.color} />
+                  </View>
+                  <Text style={styles.bCategory}>{item.label}</Text>
+                  <Text style={styles.bAmount} numberOfLines={1} adjustsFontSizeToFit>
+                    {currency} {fmt(item.value)}
+                  </Text>
+                </View>
+                <View style={styles.bBarTrack}>
+                  <View style={[styles.bBarFill, { width: `${pct}%`, backgroundColor: item.color }]} />
+                </View>
+              </View>
+            );
+          })}
+        </GlassCard>
+      </View>
+    );
+  };
 
   const renderOverview = () => (
     <FadeInView delay={0}>
@@ -235,6 +273,8 @@ export default function ReportsScreen({ navigation }) {
             ))}
           </GlassCard>
         )}
+        {overviewData.totalIncome > 0 && renderOwnershipBreakdown(overviewData.incomeBySource, overviewData.totalIncome, 'INCOME BY SOURCE')}
+        {overviewData.totalExpense > 0 && renderOwnershipBreakdown(overviewData.expenseByFunding, overviewData.totalExpense, 'EXPENSES BY FUNDING SOURCE')}
       </View>
     </FadeInView>
   );
@@ -393,6 +433,8 @@ export default function ReportsScreen({ navigation }) {
               <Text style={[styles.usVal, { color: colors.accentIndigo, textAlign: 'right' }]}>{currency} {fmt(investmentData.totalInvested)}</Text>
             </View>
           </GlassCard>
+
+          {investmentData.totalInvested > 0 && renderOwnershipBreakdown(investmentData.investmentByFunding, investmentData.totalInvested, 'INVESTMENTS BY FUNDING SOURCE')}
 
           {/* Section Header */}
           <Text style={[styles.sectionLabel, { marginTop: 16, marginBottom: 12 }]}>
@@ -695,6 +737,12 @@ export default function ReportsScreen({ navigation }) {
           )}
         </View>
 
+        {(loanSummary.totalGiven + loanSummary.totalBorrowed) > 0 && (
+          <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>
+            {renderOwnershipBreakdown(loanSummary.loansByFunding, loanSummary.totalGiven + loanSummary.totalBorrowed, 'LOANS BY FUNDING SOURCE')}
+          </View>
+        )}
+
         {/* Sub-tab Switch for I Gave / I Borrowed */}
         <View style={{ flexDirection: 'row', paddingHorizontal: 18, marginBottom: 14, gap: 10 }}>
           {['I Gave', 'I Borrowed'].map((tab) => (
@@ -792,6 +840,35 @@ export default function ReportsScreen({ navigation }) {
               onPress={() => setActiveTab(tab)}
             >
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={{ flexDirection: 'row', paddingHorizontal: 18, marginBottom: 16, gap: 8 }}>
+          {[
+            { label: 'All', value: 'ALL' },
+            { label: 'Prathista', value: 'SELF' },
+            { label: 'Praveen', value: 'SPOUSE' },
+            { label: 'Other', value: 'OTHER' }
+          ].map(opt => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[
+                styles.tabBtn,
+                ownerFilter === opt.value && { backgroundColor: accentColor + '15', borderColor: accentColor },
+                { flex: 1, paddingVertical: 8 }
+              ]}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setOwnerFilter(opt.value);
+              }}
+            >
+              <Text style={[
+                styles.tabText,
+                ownerFilter === opt.value && { color: accentColor, fontFamily: 'Inter_700Bold' }
+              ]}>
+                {opt.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>

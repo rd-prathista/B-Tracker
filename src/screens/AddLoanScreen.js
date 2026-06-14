@@ -43,6 +43,7 @@ export default function AddLoanScreen({ navigation, route }) {
   const [startDate, setStartDate] = useState(new Date());
   const [expectedReturnDate, setExpectedReturnDate] = useState(null);
   const [notes, setNotes] = useState('');
+  const [ownership, setOwnership] = useState('OTHER');
 
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showExpectedDatePicker, setShowExpectedDatePicker] = useState(false);
@@ -69,6 +70,7 @@ export default function AddLoanScreen({ navigation, route }) {
         setStartDate(new Date(loan.start_date));
         setExpectedReturnDate(loan.expected_return_date ? new Date(loan.expected_return_date) : null);
         setNotes(loan.notes || '');
+        setOwnership(loan.funded_by || 'OTHER');
       } else {
         Alert.alert('Error', 'Loan not found.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
       }
@@ -126,7 +128,8 @@ export default function AddLoanScreen({ navigation, route }) {
         currency,
         startDate: startDate.toISOString(),
         expectedReturnDate: expectedReturnDate ? expectedReturnDate.toISOString() : null,
-        notes: notes.trim() || null
+        notes: notes.trim() || null,
+        fundedBy: ownership
       };
 
       if (isEdit) {
@@ -332,8 +335,36 @@ export default function AddLoanScreen({ navigation, route }) {
               </View>
             </View>
 
-            <FadeInView delay={200} style={{ marginTop: 14 }}>
-              <Text style={styles.sectionLabel}>NOTES (OPTIONAL)</Text>
+             <FadeInView delay={180} style={{ marginTop: 14 }}>
+               <Text style={styles.sectionLabel}>FUNDED BY</Text>
+               <View style={styles.toggleRow}>
+                 {[
+                   { label: 'Prathista', value: 'SELF' },
+                   { label: 'Praveen', value: 'SPOUSE' },
+                   { label: 'Other', value: 'OTHER' }
+                 ].map((opt) => {
+                   const isSelected = ownership === opt.value;
+                   return (
+                     <TouchableOpacity
+                       key={opt.value}
+                       style={[styles.toggleBtn, isSelected && styles.toggleBtnActive]}
+                       onPress={() => {
+                         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                         setOwnership(opt.value);
+                       }}
+                       disabled={isSaving}
+                     >
+                       <Text style={[styles.toggleBtnText, isSelected && styles.toggleBtnTextActive]}>
+                         {opt.label}
+                       </Text>
+                     </TouchableOpacity>
+                   );
+                 })}
+               </View>
+             </FadeInView>
+
+             <FadeInView delay={200} style={{ marginTop: 14 }}>
+               <Text style={styles.sectionLabel}>NOTES (OPTIONAL)</Text>
               <TextInput
                 style={styles.notesInput}
                 placeholder="Details or specific conditions..."

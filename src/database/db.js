@@ -26,6 +26,7 @@ export const initDatabase = () => {
         notes TEXT,
         attachment_uri TEXT,
         is_archived INTEGER DEFAULT 0,
+        income_source TEXT DEFAULT 'OTHER',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -38,6 +39,7 @@ export const initDatabase = () => {
         notes TEXT,
         attachment_uri TEXT,
         is_archived INTEGER DEFAULT 0,
+        funded_by TEXT DEFAULT 'OTHER',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -74,6 +76,7 @@ export const initDatabase = () => {
         status TEXT DEFAULT 'Active', 
         start_date TEXT NOT NULL,
         notes TEXT,
+        funded_by TEXT DEFAULT 'OTHER',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -125,6 +128,7 @@ export const initDatabase = () => {
         notes TEXT,
         status TEXT DEFAULT 'Active',
         is_archived INTEGER DEFAULT 0,
+        funded_by TEXT DEFAULT 'OTHER',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -143,11 +147,13 @@ export const initDatabase = () => {
     const versionResult = db.getFirstSync("PRAGMA user_version;");
     const currentVersion = versionResult ? versionResult.user_version : 0;
 
-    if (currentVersion < 5) {
+    if (currentVersion < 6) {
       console.log(`Running database migration/repair (current version: ${currentVersion})`);
       
       // Temporarily disable foreign keys during schema alterations
       db.execSync("PRAGMA foreign_keys = OFF;");
+
+      if (currentVersion < 5) {
 
       if (currentVersion < 4) {
         // Case A: User has investments_old from a failed/incomplete migration. Restore it.
@@ -324,12 +330,30 @@ export const initDatabase = () => {
         CREATE INDEX IF NOT EXISTS idx_loan_repayments_loan_id ON loan_repayments(loan_id);
       `);
 
-      // Update PRAGMA user_version to 5
-      db.execSync("PRAGMA user_version = 5;");
+        // Update PRAGMA user_version to 5
+        db.execSync("PRAGMA user_version = 5;");
+        console.log("Database migration/repair successfully completed to version 5!");
+      }
+
+      // v6 migration: add ownership fields
+      if (currentVersion < 6) {
+        const v6Alters = [
+          "ALTER TABLE income ADD COLUMN income_source TEXT DEFAULT 'OTHER';",
+          "ALTER TABLE expenses ADD COLUMN funded_by TEXT DEFAULT 'OTHER';",
+          "ALTER TABLE investments ADD COLUMN funded_by TEXT DEFAULT 'OTHER';",
+          "ALTER TABLE loans ADD COLUMN funded_by TEXT DEFAULT 'OTHER';"
+        ];
+        for (const query of v6Alters) {
+          try { db.execSync(query); } catch (e) { /* Column already exists */ }
+        }
+        db.execSync("PRAGMA user_version = 6;");
+        console.log("Database migration to version 6 successfully completed!");
+      }
+
       db.execSync("PRAGMA foreign_keys = ON;");
-      console.log("Database migration/repair successfully completed to version 5!");
+      console.log(`Database migration/repair successfully completed to version 6!`);
     } else {
-      // Version is already >= 5, ensure foreign keys are enabled
+      // Version is already >= 6, ensure foreign keys are enabled
       db.execSync("PRAGMA foreign_keys = ON;");
     }
 

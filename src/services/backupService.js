@@ -20,7 +20,7 @@ export const getAppDataAsJSON = () => {
   const repayments = db.getAllSync('SELECT * FROM loan_repayments');
 
   return {
-    version: '1.3',
+    version: '1.4',
     timestamp: new Date().toISOString(),
     data: { income, expenses, categories, users, investments, contributions, goals, reminders, loans, repayments }
   };
@@ -80,22 +80,22 @@ export const importBackupData = async (backupJson) => {
 
   // Restore Income
   data.income.forEach(i => {
-    db.runSync('INSERT INTO income (amount, currency, date, category, notes, attachment_uri, is_archived) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-      [i.amount, i.currency, i.date, i.category, i.notes, i.attachment_uri || null, i.is_archived || 0]);
+    db.runSync('INSERT INTO income (amount, currency, date, category, notes, attachment_uri, is_archived, income_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+      [i.amount, i.currency, i.date, i.category, i.notes, i.attachment_uri || null, i.is_archived || 0, i.income_source || 'OTHER']);
   });
 
   // Restore Expenses
   data.expenses.forEach(e => {
-    db.runSync('INSERT INTO expenses (amount, currency, date, category, notes, attachment_uri, is_archived) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-      [e.amount, e.currency, e.date, e.category, e.notes, e.attachment_uri || null, e.is_archived || 0]);
+    db.runSync('INSERT INTO expenses (amount, currency, date, category, notes, attachment_uri, is_archived, funded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
+      [e.amount, e.currency, e.date, e.category, e.notes, e.attachment_uri || null, e.is_archived || 0, e.funded_by || 'OTHER']);
   });
 
   // Restore Investments (New Schema)
   if (data.investments) {
     data.investments.forEach(i => {
-      db.runSync(`INSERT INTO investments (id, type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, installments_paid, total_invested, next_due_date, status, start_date, notes) 
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-        [i.id, i.type, i.name, i.currency, i.recurring_amount, i.tenure_value, i.tenure_type, i.target_amount, i.installments_paid, i.total_invested, i.next_due_date, i.status, i.start_date, i.notes]);
+      db.runSync(`INSERT INTO investments (id, type, name, currency, recurring_amount, tenure_value, tenure_type, target_amount, installments_paid, total_invested, next_due_date, status, start_date, notes, funded_by) 
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+        [i.id, i.type, i.name, i.currency, i.recurring_amount, i.tenure_value, i.tenure_type, i.target_amount, i.installments_paid, i.total_invested, i.next_due_date, i.status, i.start_date, i.notes, i.funded_by || 'OTHER']);
     });
   }
 
@@ -126,8 +126,8 @@ export const importBackupData = async (backupJson) => {
   // Restore Loans
   if (data.loans) {
     data.loans.forEach(l => {
-      db.runSync('INSERT INTO loans (id, person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
-        [l.id, l.person_name, l.type, l.source_type, l.amount, l.currency, l.start_date, l.expected_return_date, l.notes, l.status, l.is_archived || 0, l.created_at]);
+      db.runSync('INSERT INTO loans (id, person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived, created_at, funded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+        [l.id, l.person_name, l.type, l.source_type, l.amount, l.currency, l.start_date, l.expected_return_date, l.notes, l.status, l.is_archived || 0, l.created_at, l.funded_by || 'OTHER']);
     });
   }
 
