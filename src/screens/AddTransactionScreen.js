@@ -39,7 +39,7 @@ import {
   getInvestments,
   updateContribution,
 } from '../services/transactionService';
-import { getAppSettings, getDb } from '../database/db';
+import { getAppSettings, getDb, getActiveCurrencies } from '../database/db';
 import { useFocusEffect } from '@react-navigation/native';
 import FadeInView from '../components/FadeInView';
 import AmbientBackground from '../components/AmbientBackground';
@@ -162,11 +162,16 @@ export default function AddTransactionScreen({ navigation, route }) {
 
     // Load currency preference
     const settings = getAppSettings();
-    if (settings?.default_currency_mode) {
-      setCurrencyMode(settings.default_currency_mode);
-      if (settings.default_currency_mode === 'INR') setCurrency('INR');
-      else if (settings.default_currency_mode === 'AED') setCurrency('AED');
+    const active = getActiveCurrencies();
+    const defaultCur = settings?.default_currency_mode;
+    if (defaultCur && active.includes(defaultCur)) {
+      setCurrencyMode(defaultCur);
+      setCurrency(defaultCur);
+    } else if (active.length > 0) {
+      setCurrencyMode(active[0]);
+      setCurrency(active[0]);
     } else {
+      setCurrencyMode('AED');
       setCurrency('AED');
     }
   }, [isEdit, transactionId, type]);
@@ -373,7 +378,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                   numberOfLines={1}
                 />
                 <View style={[styles.currencyRow, showValidation && !currency && styles.invalidRow]}>
-                  {SUPPORTED_CURRENCIES.map((cur) => {
+                  {getActiveCurrencies().map((cur) => {
                     const isSelected = currency === cur;
                     return (
                       <TouchableOpacity

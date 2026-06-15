@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import GlassCard from './GlassCard';
+import { getActiveCurrencies, getAppSettings } from '../database/db';
 
 export default function ReminderModal({ visible, onClose, onSave, reminderToEdit = null }) {
   const [title, setTitle] = useState('');
@@ -31,7 +32,18 @@ export default function ReminderModal({ visible, onClose, onSave, reminderToEdit
         setTitle('');
         setType('Payment');
         setAmount('');
-        setCurrency('AED');
+        
+        const active = getActiveCurrencies();
+        const settings = getAppSettings();
+        const defaultCur = settings?.default_currency_mode;
+        if (defaultCur && active.includes(defaultCur)) {
+          setCurrency(defaultCur);
+        } else if (active.length > 0) {
+          setCurrency(active[0]);
+        } else {
+          setCurrency('AED');
+        }
+
         setDueDate(new Date());
         setRepeatType('One Time');
       }
@@ -87,7 +99,8 @@ export default function ReminderModal({ visible, onClose, onSave, reminderToEdit
                   onChangeText={setAmount}
                 />
                 <TouchableOpacity
-                  style={styles.currencyToggle}
+                  style={[styles.currencyToggle, getActiveCurrencies().length <= 1 && { opacity: 0.6 }]}
+                  disabled={getActiveCurrencies().length <= 1}
                   onPress={() => setCurrency(c => c === 'AED' ? 'INR' : 'AED')}
                 >
                   <Text style={styles.currencyText}>{currency}</Text>

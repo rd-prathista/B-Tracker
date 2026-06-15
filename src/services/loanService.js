@@ -1,4 +1,4 @@
-import { getDb } from '../database/db';
+import { getDb, getActiveCurrencies, isCurrencyActive } from '../database/db';
 
 /**
  * Get current date string in local YYYY-MM-DD format
@@ -121,6 +121,15 @@ export const getLoans = (filters = {}) => {
   if (currency && currency !== 'all') {
     query += ' AND currency = ?';
     params.push(currency);
+  } else {
+    const activeCurs = getActiveCurrencies();
+    if (activeCurs.length === 0) {
+      query += ' AND 1=0';
+    } else {
+      const placeholders = activeCurs.map(() => '?').join(', ');
+      query += ` AND currency IN (${placeholders})`;
+      params.push(...activeCurs);
+    }
   }
 
   if (ownerFilter && ownerFilter !== 'ALL') {
@@ -416,9 +425,15 @@ export const getLoanTransactionsForHistory = (filters = {}) => {
     loanParams.push(loanId);
   }
 
+  const activeCurs = getActiveCurrencies();
+  const placeholders = activeCurs.map(() => '?').join(', ');
+
   if (currency && currency !== 'all') {
     loanQuery += ' AND currency = ?';
     loanParams.push(currency);
+  } else {
+    loanQuery += ` AND currency IN (${placeholders})`;
+    loanParams.push(...activeCurs);
   }
   
   if (startDate) {
@@ -447,6 +462,9 @@ export const getLoanTransactionsForHistory = (filters = {}) => {
   if (currency && currency !== 'all') {
     repaymentQuery += ' AND l.currency = ?';
     repayParams.push(currency);
+  } else {
+    repaymentQuery += ` AND l.currency IN (${placeholders})`;
+    repayParams.push(...activeCurs);
   }
   if (startDate) {
     repaymentQuery += ' AND r.date >= ?';
@@ -505,4 +523,30 @@ export const getLoanTransactionsForHistory = (filters = {}) => {
   }
 
   return allLoanTxs;
+};
+
+export const getInactiveCurrencyObligations = (currency) => {
+  const db = getDb();
+  const loans = db.getAllSync(
+    "SELECT id, amount, type FROM loans WHERE currency = ? AND (status = 'Active' OR status = 'Overdue') AND is_archived = 0",
+    [currency]
+  );
+  
+  let outstandingReceivable = 0;
+  let outstandingPayable = 0;
+  
+  loans.forEach(l => {
+    const repaymentSum = db.getFirstSync(
+      'SELECT SUM(amount) as total FROM loan_repayments WHERE loan_id = ?',
+      [l.id]
+    )?.total || 0;
+    const outstanding = Math.max(0, l.amount - repaymentSum);
+    if (l.type === 'I Gave') {
+      outstandingReceivable += outstanding;
+    } else {
+      outstandingPayable += outstanding;
+    }
+  });
+  
+  return { outstandingReceivable, outstandingPayable };
 };

@@ -1,4 +1,4 @@
-import { getDb } from '../database/db';
+import { getDb, getActiveCurrencies, isCurrencyActive } from '../database/db';
 
 export const SUPPORTED_CURRENCIES = ['AED', 'INR'];
 
@@ -181,8 +181,17 @@ const appendTransactionFilters = (alias, dateField = 'date') => {
     clause: () => clause,
     paramList: () => params,
     withCurrency: (currency) => {
-      if (!currency) return;
-      add(` AND ${alias}.currency = ?`, currency);
+      if (currency && currency !== 'all') {
+        add(` AND ${alias}.currency = ?`, currency);
+      } else {
+        const activeCurs = getActiveCurrencies();
+        if (activeCurs.length === 0) {
+          add(` AND 1=0`);
+        } else {
+          const placeholders = activeCurs.map(() => '?').join(', ');
+          add(` AND ${alias}.currency IN (${placeholders})`, ...activeCurs);
+        }
+      }
     },
     withStartDate: (startDate) => {
       if (!startDate) return;
@@ -292,6 +301,9 @@ export const getTransactions = (filters = {}) => {
 export const getDashboardBalances = () => {
   const db = getDb();
   const getByCode = (code) => {
+    if (!isCurrencyActive(code)) {
+      return { income: 0, expense: 0, investment: 0, balance: 0 };
+    }
     const income = db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
     const expense = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
     const investment = db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0`, [code])?.total || 0;
@@ -338,11 +350,14 @@ export const getDashboardBalances = () => {
 
 export const getActiveInvestmentsSummary = () => {
   const db = getDb();
+  const activeCurs = getActiveCurrencies();
+  if (activeCurs.length === 0) return [];
+  const placeholders = activeCurs.map(() => '?').join(', ');
   return db.getAllSync(`
     SELECT * FROM investments 
-    WHERE status = 'Active' 
+    WHERE status = 'Active' AND currency IN (${placeholders})
     ORDER BY created_at DESC
-  `);
+  `, activeCurs);
 };
 
 export const getInvestmentAnalytics = (currency, ownerFilter) => {
@@ -670,6 +685,10 @@ export const getSavingsTrends = (archiveMode = 'Active', ownerFilter) => {
   const ownerClauseExp = ownerFilter && ownerFilter !== 'ALL' ? ' AND funded_by = ?' : '';
   const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter, ownerFilter] : [];
 
+  const activeCurs = getActiveCurrencies();
+  const placeholders = activeCurs.map(() => '?').join(', ');
+  const queryParams = [...ownerParams, ...activeCurs];
+
   const rows = db.getAllSync(`
     SELECT strftime('%Y-%m', date) as month, currency, SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as totalIncome, SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as totalExpense
     FROM (
@@ -677,10 +696,10 @@ export const getSavingsTrends = (archiveMode = 'Active', ownerFilter) => {
       UNION ALL 
       SELECT amount, currency, date, 'expense' as type FROM expenses WHERE 1=1${archExp}${ownerClauseExp}
     )
-    WHERE date >= date('now', 'start of month', '-5 months')
+    WHERE date >= date('now', 'start of month', '-5 months') AND currency IN (${placeholders})
     GROUP BY month, currency
     ORDER BY month DESC
-  `, ownerParams);
+  `, queryParams);
   const trends = {};
   rows.forEach(row => {
     if (!trends[row.month]) trends[row.month] = { AED: { savings: 0 }, INR: { savings: 0 } };

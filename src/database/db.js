@@ -58,7 +58,8 @@ export const initDatabase = () => {
         default_currency_mode TEXT DEFAULT 'AED',
         biometrics_enabled INTEGER DEFAULT 0,
         dev_cleared INTEGER DEFAULT 0,
-        last_sync_time TEXT
+        last_sync_time TEXT,
+        active_currencies TEXT DEFAULT '["AED", "INR"]'
       );
 
       CREATE TABLE IF NOT EXISTS investments (
@@ -147,7 +148,7 @@ export const initDatabase = () => {
     const versionResult = db.getFirstSync("PRAGMA user_version;");
     const currentVersion = versionResult ? versionResult.user_version : 0;
 
-    if (currentVersion < 6) {
+    if (currentVersion < 7) {
       console.log(`Running database migration/repair (current version: ${currentVersion})`);
       
       // Temporarily disable foreign keys during schema alterations
@@ -350,10 +351,19 @@ export const initDatabase = () => {
         console.log("Database migration to version 6 successfully completed!");
       }
 
+      // v7 migration: add active_currencies field to app_settings
+      if (currentVersion < 7) {
+        try {
+          db.execSync("ALTER TABLE app_settings ADD COLUMN active_currencies TEXT DEFAULT '[\"AED\", \"INR\"]';");
+        } catch (e) { /* Column already exists */ }
+        db.execSync("PRAGMA user_version = 7;");
+        console.log("Database migration to version 7 successfully completed!");
+      }
+
       db.execSync("PRAGMA foreign_keys = ON;");
-      console.log(`Database migration/repair successfully completed to version 6!`);
+      console.log(`Database migration/repair successfully completed to version 7!`);
     } else {
-      // Version is already >= 6, ensure foreign keys are enabled
+      // Version is already >= 7, ensure foreign keys are enabled
       db.execSync("PRAGMA foreign_keys = ON;");
     }
 
@@ -506,6 +516,39 @@ export const updateAppSettings = (key, value) => {
     db.runSync(`UPDATE app_settings SET ${key} = ?`, [value]);
   } catch (e) {
     console.error('Update settings error:', e);
+  }
+};
+
+export const getActiveCurrencies = () => {
+  try {
+    const settings = getAppSettings();
+    if (settings && settings.active_currencies) {
+      return JSON.parse(settings.active_currencies);
+    }
+  } catch (e) {
+    console.error('Error getting active currencies:', e);
+  }
+  return ['AED', 'INR'];
+};
+
+export const isCurrencyActive = (currency) => {
+  return getActiveCurrencies().includes(currency);
+};
+
+export const activateCurrency = (currency) => {
+  const active = getActiveCurrencies();
+  if (!active.includes(currency)) {
+    active.push(currency);
+    updateAppSettings('active_currencies', JSON.stringify(active));
+  }
+};
+
+export const deactivateCurrency = (currency) => {
+  const active = getActiveCurrencies();
+  const index = active.indexOf(currency);
+  if (index > -1) {
+    active.splice(index, 1);
+    updateAppSettings('active_currencies', JSON.stringify(active));
   }
 };
 

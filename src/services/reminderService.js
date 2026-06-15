@@ -1,13 +1,19 @@
-import { getDb } from '../database/db';
+import { getDb, getActiveCurrencies } from '../database/db';
 
 export const getReminders = () => {
   const db = getDb();
-  return db.getAllSync('SELECT * FROM reminders ORDER BY due_date ASC');
+  const activeCurs = getActiveCurrencies();
+  if (activeCurs.length === 0) return [];
+  const placeholders = activeCurs.map(() => '?').join(', ');
+  return db.getAllSync(`SELECT * FROM reminders WHERE currency IS NULL OR currency IN (${placeholders}) ORDER BY due_date ASC`, activeCurs);
 };
 
 export const getUpcomingReminders = () => {
   const db = getDb();
-  return db.getAllSync('SELECT * FROM reminders WHERE enabled = 1 ORDER BY due_date ASC LIMIT 10');
+  const activeCurs = getActiveCurrencies();
+  if (activeCurs.length === 0) return [];
+  const placeholders = activeCurs.map(() => '?').join(', ');
+  return db.getAllSync(`SELECT * FROM reminders WHERE enabled = 1 AND (currency IS NULL OR currency IN (${placeholders})) ORDER BY due_date ASC LIMIT 10`, activeCurs);
 };
 
 export const addReminder = (data) => {

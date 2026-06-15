@@ -28,6 +28,7 @@ import {
   toggleReminderActive,
   setupNotifications 
 } from '../services/reminderService';
+import { getAppSettings, getActiveCurrencies } from '../database/db';
 
 const REPEAT_OPTIONS = ['None', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
 
@@ -49,6 +50,15 @@ export default function RemindersScreen({ navigation }) {
   useEffect(() => {
     loadReminders();
     setupNotifications();
+
+    const settings = getAppSettings();
+    const active = getActiveCurrencies();
+    const defaultCur = settings?.default_currency_mode;
+    if (defaultCur && active.includes(defaultCur)) {
+      setCurrency(defaultCur);
+    } else if (active.length > 0) {
+      setCurrency(active[0]);
+    }
   }, []);
 
   const loadReminders = () => {

@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { getTransactions, deleteTransaction } from '../services/transactionService';
+import { getActiveCurrencies } from '../database/db';
 import { getLoanTransactionsForHistory, convertTransactionToLoanActivity, getLoanById, deleteLoan, deleteRepayment } from '../services/loanService';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
@@ -111,7 +112,13 @@ export default function AllTransactionsScreen({ navigation, route }) {
     setTransactions(list);
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [type, currency, dateFilter, customStart, customEnd, searchQuery, investmentId, archiveMode]));
+  useFocusEffect(useCallback(() => {
+    const active = getActiveCurrencies();
+    if (currency !== 'all' && !active.includes(currency)) {
+      setCurrency('all');
+    }
+    loadData();
+  }, [type, currency, dateFilter, customStart, customEnd, searchQuery, investmentId, archiveMode]));
 
 
   const handleFilterSelect = (f) => {
@@ -311,13 +318,15 @@ export default function AllTransactionsScreen({ navigation, route }) {
                 </View>
               )}
 
-              <View style={[styles.segmentedCtrl, investmentId && { flex: 1 }]}>
-                {['all', 'AED', 'INR'].map((c) => (
-                  <TouchableOpacity key={c} style={[styles.segBtn, currency === c && styles.segBtnActive]} onPress={() => setCurrency(c)}>
-                    <Text style={[styles.segText, currency === c && styles.segTextActive]}>{c.toUpperCase()}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {getActiveCurrencies().length > 1 && (
+                <View style={[styles.segmentedCtrl, investmentId && { flex: 1 }]}>
+                  {['all', ...getActiveCurrencies()].map((c) => (
+                    <TouchableOpacity key={c} style={[styles.segBtn, currency === c && styles.segBtnActive]} onPress={() => setCurrency(c)}>
+                      <Text style={[styles.segText, currency === c && styles.segTextActive]}>{c.toUpperCase()}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, gap: 8, paddingBottom: 14 }}>
@@ -384,7 +393,7 @@ export default function AllTransactionsScreen({ navigation, route }) {
                 </View>
 
                 {/* Table Rows */}
-                {(currency === 'all' ? ['AED', 'INR'] : [currency]).map((cur, idx) => {
+                {(currency === 'all' ? getActiveCurrencies() : [currency]).map((cur, idx) => {
                   const summary = summaries[cur];
                   const surplusColor = summary.surplus >= 0 ? colors.success : colors.danger;
                   return (
@@ -416,7 +425,7 @@ export default function AllTransactionsScreen({ navigation, route }) {
                 {/* Table Rows */}
                 {(() => {
                   const loanRows = [];
-                  const currencies = currency === 'all' ? ['AED', 'INR'] : [currency];
+                  const currencies = currency === 'all' ? getActiveCurrencies() : [currency];
                   currencies.forEach(cur => {
                     // Row: I Gave
                     loanRows.push({
@@ -473,19 +482,23 @@ export default function AllTransactionsScreen({ navigation, route }) {
                   <View style={styles.monthHeader}>
                     <Text style={styles.monthTitle}>{group.month}</Text>
                     <View style={styles.netRow}>
-                      {(currency === 'all' || currency === 'AED') && (
-                        <Text style={[styles.netText, { color: group.netAED >= 0 ? colors.success : colors.danger }]}>
-                          AED Net: {group.netAED > 0 ? '+' : ''}
-                          {fmt(group.netAED)}
-                        </Text>
-                      )}
-                      {currency === 'all' && <Text style={{ color: colors.border }}> | </Text>}
-                      {(currency === 'all' || currency === 'INR') && (
-                        <Text style={[styles.netText, { color: group.netINR >= 0 ? colors.accentTeal : colors.danger }]}>
-                          INR Net: {group.netINR > 0 ? '+' : ''}
-                          {fmt(group.netINR)}
-                        </Text>
-                      )}
+                      {(() => {
+                        const activeCurs = getActiveCurrencies();
+                        const displayedCurs = currency === 'all' ? activeCurs : [currency].filter(c => activeCurs.includes(c));
+                        return displayedCurs.map((cur, idx) => {
+                          const isAED = cur === 'AED';
+                          const val = isAED ? group.netAED : group.netINR;
+                          const color = val >= 0 ? (isAED ? colors.success : colors.accentTeal) : colors.danger;
+                          return (
+                            <React.Fragment key={cur}>
+                              {idx > 0 && <Text style={{ color: colors.border }}> | </Text>}
+                              <Text style={[styles.netText, { color }]}>
+                                {cur} Net: {val > 0 ? '+' : ''}{fmt(val)}
+                              </Text>
+                            </React.Fragment>
+                          );
+                        });
+                      })()}
                     </View>
                   </View>
                 </FadeInView>

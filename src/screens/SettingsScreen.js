@@ -12,7 +12,7 @@ import {
   getLoggedInEmail,
   firebaseLogout
 } from '../services/firebaseSyncService';
-import { getAppSettings, updateAppSettings } from '../database/db';
+import { getAppSettings, updateAppSettings, getActiveCurrencies, activateCurrency, deactivateCurrency } from '../database/db';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import FadeInView from '../components/FadeInView';
@@ -34,6 +34,8 @@ export default function SettingsScreen({ navigation, route }) {
   // Entry Preferences
   const [currencyMode, setCurrencyMode] = useState('AED');
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [activeCurs, setActiveCurs] = useState([]);
+  const [currencyManageModalVisible, setCurrencyManageModalVisible] = useState(false);
   const [settingLoading, setSettingLoading] = useState(false);
 
   // Biometrics
@@ -56,6 +58,7 @@ export default function SettingsScreen({ navigation, route }) {
     if (settings?.default_currency_mode) {
       setCurrencyMode(settings.default_currency_mode);
     }
+    setActiveCurs(getActiveCurrencies());
     setBiometricsEnabled(!!settings?.biometrics_enabled);
 
     const available = await checkBiometricsAvailability();
@@ -344,6 +347,13 @@ export default function SettingsScreen({ navigation, route }) {
                 sublabel={getCurrencyModeLabel(currencyMode)}
                 onPress={() => setCurrencyModalVisible(true)} 
               />
+              <View style={styles.divider} />
+              <SettingItem 
+                icon="settings-outline" 
+                label="Currency Management" 
+                sublabel={`${activeCurs.join(', ')} Active`}
+                onPress={() => setCurrencyManageModalVisible(true)} 
+              />
             </GlassCard>
           </FadeInView>
 
@@ -435,6 +445,69 @@ export default function SettingsScreen({ navigation, route }) {
               </View>
 
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setCurrencyModalVisible(false)}>
+                <Text style={styles.cancelText}>Close</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
+        </Modal>
+
+        {/* Currency Management Modal */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={currencyManageModalVisible}
+          onRequestClose={() => setCurrencyManageModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <GlassCard style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Currency Management</Text>
+              <Text style={styles.modalSub}>
+                Active currencies are visible throughout the app. Deactivating a currency will temporarily hide all its data and entries from active screens without deleting any data. At least one currency must remain active.
+              </Text>
+              
+              <View style={styles.optionList}>
+                {['AED', 'INR'].map((code) => {
+                  const isActive = activeCurs.includes(code);
+                  const isOnlyActive = activeCurs.length === 1 && isActive;
+
+                  const toggleActive = () => {
+                    if (isOnlyActive) return;
+                    if (isActive) {
+                      deactivateCurrency(code);
+                    } else {
+                      activateCurrency(code);
+                    }
+                    const updated = getActiveCurrencies();
+                    setActiveCurs(updated);
+                    // Adjust default currency if it was deactivated
+                    const currentDefault = getAppSettings()?.default_currency_mode || 'AED';
+                    if (!updated.includes(currentDefault) && updated.length > 0) {
+                      setCurrencyMode(updated[0]);
+                      updateAppSettings('default_currency_mode', updated[0]);
+                    }
+                  };
+
+                  return (
+                    <TouchableOpacity 
+                      key={code} 
+                      style={[styles.optionBtn, isOnlyActive && { opacity: 0.5 }]} 
+                      onPress={toggleActive}
+                      disabled={isOnlyActive}
+                    >
+                      <View style={styles.optionInfo}>
+                        <Text style={[styles.optionText, isActive && styles.optionTextActive]}>
+                          {code === 'AED' ? 'AED (United Arab Emirates Dirham)' : 'INR (Indian Rupee)'}
+                        </Text>
+                      </View>
+                      <View style={[styles.toggleTrack, isActive && styles.toggleTrackActive]}>
+                        <View style={[styles.toggleThumb, isActive && styles.toggleThumbActive]} />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity style={[styles.cancelBtn, { marginTop: 16 }]} onPress={() => setCurrencyManageModalVisible(false)}>
                 <Text style={styles.cancelText}>Close</Text>
               </TouchableOpacity>
             </GlassCard>

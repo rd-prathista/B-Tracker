@@ -9,7 +9,8 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { getDashboardBalances, getRecentTransactions, deleteTransaction, getActiveInvestmentsSummary, getArchivableCount, archiveOldTransactions, getArchivableTransactions } from '../services/transactionService';
 import { getUpcomingReminders, addReminder, updateReminder, deleteReminder, toggleReminder } from '../services/reminderService';
-import { getLoanSummary, convertTransactionToLoanActivity, getLoanTransactionsForHistory, deleteLoan, deleteRepayment } from '../services/loanService';
+import { getLoanSummary, convertTransactionToLoanActivity, getLoanTransactionsForHistory, deleteLoan, deleteRepayment, getInactiveCurrencyObligations } from '../services/loanService';
+import { isCurrencyActive } from '../database/db';
 
 import FadeInView from '../components/FadeInView';
 import AmbientBackground from '../components/AmbientBackground';
@@ -73,6 +74,7 @@ export default function DashboardScreen({ navigation }) {
     AED: { income: 0, expense: 0, investment: 0, balance: 0 },
     INR: { income: 0, expense: 0, investment: 0, balance: 0 },
   });
+  const [inactiveReminders, setInactiveReminders] = useState([]);
   const [recentTx, setRecentTx] = useState([]);
   const [activeInvestments, setActiveInvestments] = useState([]);
   const [hasData, setHasData] = useState(false);
@@ -111,6 +113,19 @@ export default function DashboardScreen({ navigation }) {
     b.INR.outstandingBorrowed = inrLoans.outstandingBorrowed;
     
     setBalances(b);
+
+    const inactiveList = [];
+    ['AED', 'INR'].forEach(code => {
+      if (!isCurrencyActive(code)) {
+        const obs = getInactiveCurrencyObligations(code);
+        inactiveList.push({
+          code,
+          receivable: obs.outstandingReceivable,
+          payable: obs.outstandingPayable
+        });
+      }
+    });
+    setInactiveReminders(inactiveList);
     
     // Merge recent transactions and recent loans/repayments
     const normalTxs = getRecentTransactions(10);
@@ -317,16 +332,42 @@ export default function DashboardScreen({ navigation }) {
               </View>
             </FadeInView>
           ) : (
-            <FadeInView delay={160}>
-              <GlassCard style={styles.balanceCard}>
-                <View style={styles.balanceCardHeader}>
-                  <Text style={styles.balanceCardLabel}>TOTAL BALANCES</Text>
-                  <Ionicons name="stats-chart-outline" size={14} color={colors.textMuted} />
-                </View>
-                <BalanceRow code="AED" data={balances.AED} isLast={!hasINR} />
-                {hasINR && <BalanceRow code="INR" data={balances.INR} isLast={true} />}
-              </GlassCard>
-            </FadeInView>
+            <>
+              <FadeInView delay={160}>
+                <GlassCard style={styles.balanceCard}>
+                  <View style={styles.balanceCardHeader}>
+                    <Text style={styles.balanceCardLabel}>TOTAL BALANCES</Text>
+                    <Ionicons name="stats-chart-outline" size={14} color={colors.textMuted} />
+                  </View>
+                  {isCurrencyActive('AED') && <BalanceRow code="AED" data={balances.AED} isLast={!isCurrencyActive('INR')} />}
+                  {isCurrencyActive('INR') && <BalanceRow code="INR" data={balances.INR} isLast={true} />}
+                </GlassCard>
+              </FadeInView>
+
+              {inactiveReminders.map(rem => (
+                <FadeInView key={rem.code} delay={170}>
+                  <GlassCard style={[styles.balanceCard, { marginTop: 12, borderColor: colors.border }]}>
+                    <LinearGradient colors={['rgba(245, 158, 11, 0.08)', 'rgba(30, 41, 59, 0.02)']} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+                    <View style={styles.balanceCardHeader}>
+                      <Text style={[styles.balanceCardLabel, { color: colors.textMuted }]}>INACTIVE CURRENCY REMINDER</Text>
+                      <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+                    </View>
+                    <View style={{ paddingVertical: 4 }}>
+                      <Text style={{ fontFamily: 'Inter_800ExtraBold', fontSize: 18, color: colors.textSecondary, marginBottom: 8 }}>{rem.code}</Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
+                        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Outstanding Receivable</Text>
+                        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: '#F59E0B' }}>{rem.code} {fmt(rem.receivable)}</Text>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
+                        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Outstanding Payable</Text>
+                        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.dangerLight }}>{rem.code} {fmt(rem.payable)}</Text>
+                      </View>
+                    </View>
+                  </GlassCard>
+                </FadeInView>
+              ))}
+            </>
           )}
 
           {false && (

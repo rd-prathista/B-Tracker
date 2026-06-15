@@ -18,11 +18,12 @@ export const getAppDataAsJSON = () => {
   const reminders = db.getAllSync('SELECT * FROM reminders');
   const loans = db.getAllSync('SELECT * FROM loans');
   const repayments = db.getAllSync('SELECT * FROM loan_repayments');
+  const app_settings = db.getAllSync('SELECT * FROM app_settings');
 
   return {
-    version: '1.4',
+    version: '1.5',
     timestamp: new Date().toISOString(),
-    data: { income, expenses, categories, users, investments, contributions, goals, reminders, loans, repayments }
+    data: { income, expenses, categories, users, investments, contributions, goals, reminders, loans, repayments, app_settings }
   };
 };
 
@@ -137,6 +138,26 @@ export const importBackupData = async (backupJson) => {
       db.runSync('INSERT INTO loan_repayments (id, loan_id, amount, date, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)', 
         [r.id, r.loan_id, r.amount, r.date, r.notes, r.created_at]);
     });
+  }
+
+  // Restore App Settings
+  if (data.app_settings && data.app_settings.length > 0) {
+    const s = data.app_settings[0];
+    db.runSync('DELETE FROM app_settings');
+    db.runSync(
+      `INSERT INTO app_settings (id, theme, currency, default_currency_mode, biometrics_enabled, dev_cleared, last_sync_time, active_currencies) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        s.id,
+        s.theme || 'dark',
+        s.currency || 'AED',
+        s.default_currency_mode || 'AED',
+        s.biometrics_enabled || 0,
+        s.dev_cleared || 0,
+        s.last_sync_time || null,
+        s.active_currencies || '["AED", "INR"]'
+      ]
+    );
   }
 
   return true;

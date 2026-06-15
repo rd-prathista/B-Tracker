@@ -20,7 +20,7 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { addLoan, updateLoan, getLoanById } from '../services/loanService';
 import { getDashboardBalances } from '../services/transactionService';
-import { getAppSettings } from '../database/db';
+import { getAppSettings, getActiveCurrencies } from '../database/db';
 import FadeInView from '../components/FadeInView';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
@@ -55,8 +55,12 @@ export default function AddLoanScreen({ navigation, route }) {
   useEffect(() => {
     // Load currency preference
     const settings = getAppSettings();
-    if (settings?.default_currency_mode) {
-      setCurrency(settings.default_currency_mode);
+    const active = getActiveCurrencies();
+    const defaultCur = settings?.default_currency_mode;
+    if (defaultCur && active.includes(defaultCur)) {
+      setCurrency(defaultCur);
+    } else if (active.length > 0) {
+      setCurrency(active[0]);
     }
 
     if (isEdit) {
@@ -210,7 +214,7 @@ export default function AddLoanScreen({ navigation, route }) {
                   editable={!isSaving}
                 />
                 <View style={styles.currencyRow}>
-                  {SUPPORTED_CURRENCIES.map((cur) => {
+                  {getActiveCurrencies().map((cur) => {
                     const isSelected = currency === cur;
                     return (
                       <TouchableOpacity

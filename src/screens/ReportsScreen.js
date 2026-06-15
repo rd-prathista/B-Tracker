@@ -10,6 +10,7 @@ import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment } from '../services/transactionService';
 import { getLoans, getLoanSummary } from '../services/loanService';
+import { getActiveCurrencies } from '../database/db';
 
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
@@ -98,7 +99,13 @@ export default function ReportsScreen({ navigation }) {
     setExpandedId(expandedId === id ? null : id);
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [activeTab, currency, dateFilter, customStart, customEnd, archiveMode, searchQuery, ownerFilter]));
+  useFocusEffect(useCallback(() => {
+    const active = getActiveCurrencies();
+    if (active.length > 0 && !active.includes(currency)) {
+      setCurrency(active[0]);
+    }
+    loadData();
+  }, [activeTab, currency, dateFilter, customStart, customEnd, archiveMode, searchQuery, ownerFilter]));
 
 
   const accentColor = currency === 'AED' ? colors.primary : colors.accentTeal;
@@ -123,15 +130,19 @@ export default function ReportsScreen({ navigation }) {
   };
 
 
-  const renderCurrencyToggle = () => (
-    <View style={styles.currencyToggle}>
-      {['AED', 'INR'].map((cur) => (
-        <TouchableOpacity key={cur} style={[styles.curBtn, currency === cur && { backgroundColor: cur === 'AED' ? colors.primary : colors.accentTeal }]} onPress={() => setCurrency(cur)}>
-          <Text style={[styles.curText, currency === cur && styles.curTextActive]}>{cur}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  const renderCurrencyToggle = () => {
+    const active = getActiveCurrencies();
+    if (active.length <= 1) return null;
+    return (
+      <View style={styles.currencyToggle}>
+        {active.map((cur) => (
+          <TouchableOpacity key={cur} style={[styles.curBtn, currency === cur && { backgroundColor: cur === 'AED' ? colors.primary : colors.accentTeal }]} onPress={() => setCurrency(cur)}>
+            <Text style={[styles.curText, currency === cur && styles.curTextActive]}>{cur}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
 
   const renderArchiveSelector = () => (
     <View style={{ flexDirection: 'row', paddingHorizontal: 18, marginBottom: 16, gap: 10 }}>
