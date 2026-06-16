@@ -350,26 +350,34 @@ export default function ReportsScreen({ navigation }) {
     const months = Object.keys(savingsTrends).sort().reverse();
     if (months.length === 0) return <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No savings data available</Text></View>;
 
+    const active = getActiveCurrencies();
+    const showAED = active.includes('AED');
+    const showINR = active.includes('INR');
+
     return (
       <FadeInView delay={0}>
         <View style={{ paddingHorizontal: 18, paddingBottom: 20 }}>
           <GlassCard style={styles.tableCard}>
             <View style={[styles.tr, styles.trHeader]}>
               <Text style={[styles.th, { flex: 1.2, textAlign: 'left' }]}>Month</Text>
-              <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>AED</Text>
-              <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>INR</Text>
+              {showAED && <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>AED</Text>}
+              {showINR && <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>INR</Text>}
             </View>
             {months.map(m => {
               const data = savingsTrends[m];
               return (
                 <View key={m} style={styles.tr}>
                   <Text style={[styles.tdText, { flex: 1.2, textAlign: 'left', fontFamily: 'Inter_700Bold', color: colors.textSecondary }]}>{monthName(m)}</Text>
-                  <Text style={[styles.tdText, { flex: 1, color: data.AED.savings >= 0 ? colors.success : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {data.AED.savings > 0 ? '+' : ''}{fmt(data.AED.savings)}
-                  </Text>
-                  <Text style={[styles.tdText, { flex: 1, color: data.INR.savings >= 0 ? colors.accentTeal : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {data.INR.savings > 0 ? '+' : ''}{fmt(data.INR.savings)}
-                  </Text>
+                  {showAED && (
+                    <Text style={[styles.tdText, { flex: 1, color: (data.AED?.savings || 0) >= 0 ? colors.success : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {(data.AED?.savings || 0) > 0 ? '+' : ''}{fmt(data.AED?.savings || 0)}
+                    </Text>
+                  )}
+                  {showINR && (
+                    <Text style={[styles.tdText, { flex: 1, color: (data.INR?.savings || 0) >= 0 ? colors.accentTeal : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {(data.INR?.savings || 0) > 0 ? '+' : ''}{fmt(data.INR?.savings || 0)}
+                    </Text>
+                  )}
                 </View>
               );
             })}

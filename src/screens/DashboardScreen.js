@@ -346,22 +346,21 @@ export default function DashboardScreen({ navigation }) {
 
               {inactiveReminders.map(rem => (
                 <FadeInView key={rem.code} delay={170}>
-                  <GlassCard style={[styles.balanceCard, { marginTop: 12, borderColor: colors.border }]}>
-                    <LinearGradient colors={['rgba(245, 158, 11, 0.08)', 'rgba(30, 41, 59, 0.02)']} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
-                    <View style={styles.balanceCardHeader}>
-                      <Text style={[styles.balanceCardLabel, { color: colors.textMuted }]}>INACTIVE CURRENCY REMINDER</Text>
-                      <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
-                    </View>
-                    <View style={{ paddingVertical: 4 }}>
-                      <Text style={{ fontFamily: 'Inter_800ExtraBold', fontSize: 18, color: colors.textSecondary, marginBottom: 8 }}>{rem.code}</Text>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-                        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Outstanding Receivable</Text>
-                        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: '#F59E0B' }}>{rem.code} {fmt(rem.receivable)}</Text>
+                  <GlassCard style={[styles.balanceCard, { marginTop: 10, borderColor: colors.border }]} contentStyle={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+                    <LinearGradient colors={['rgba(245, 158, 11, 0.06)', 'rgba(30, 41, 59, 0.02)']} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flex: 1.2 }}>
+                        <Text style={{ fontFamily: 'Inter_800ExtraBold', fontSize: 11, color: colors.textSecondary, letterSpacing: 0.5 }}>{rem.code} REMINDER</Text>
+                        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 8, color: colors.textMuted, marginTop: 1 }}>Inactive Obligations</Text>
                       </View>
-                      <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}>
-                        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Outstanding Payable</Text>
-                        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.dangerLight }}>{rem.code} {fmt(rem.payable)}</Text>
+                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 9, color: colors.textMuted }}>Receivable</Text>
+                        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 12, color: '#F59E0B', marginTop: 1 }}>{rem.code} {fmt(rem.receivable)}</Text>
+                      </View>
+                      <View style={{ width: 1, backgroundColor: colors.border, height: 18, marginHorizontal: 8 }} />
+                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                        <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 9, color: colors.textMuted }}>Payable</Text>
+                        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.dangerLight, marginTop: 1 }}>{rem.code} {fmt(rem.payable)}</Text>
                       </View>
                     </View>
                   </GlassCard>
