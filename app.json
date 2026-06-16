@@ -6,8 +6,8 @@
     "version": "1.0.0",
     "updates": {
       "url": "https://u.expo.dev/dfed5c8a-dd77-4f9e-95f5-c3d67a73f61d",
-      "checkAutomatically": "ON_ERROR_RECOVERY",
-      "enabled": false
+      "checkAutomatically": "ON_LOAD",
+      "enabled": true
     },
     "runtimeVersion": {
       "policy": "appVersion"
