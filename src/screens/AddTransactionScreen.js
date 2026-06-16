@@ -164,7 +164,10 @@ export default function AddTransactionScreen({ navigation, route }) {
     const settings = getAppSettings();
     const active = getActiveCurrencies();
     const defaultCur = settings?.default_currency_mode;
-    if (defaultCur && active.includes(defaultCur)) {
+    if (defaultCur === 'ask') {
+      setCurrencyMode('ask');
+      setCurrency(null);
+    } else if (defaultCur && active.includes(defaultCur)) {
       setCurrencyMode(defaultCur);
       setCurrency(defaultCur);
     } else if (active.length > 0) {

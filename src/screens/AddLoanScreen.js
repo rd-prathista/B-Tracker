@@ -36,7 +36,7 @@ export default function AddLoanScreen({ navigation, route }) {
   const isEdit = loanId != null;
 
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('AED');
+  const [currency, setCurrency] = useState(null);
   const [personName, setPersonName] = useState('');
   const [loanType, setLoanType] = useState('I Gave');
   const [sourceType, setSourceType] = useState('Person');
@@ -57,7 +57,9 @@ export default function AddLoanScreen({ navigation, route }) {
     const settings = getAppSettings();
     const active = getActiveCurrencies();
     const defaultCur = settings?.default_currency_mode;
-    if (defaultCur && active.includes(defaultCur)) {
+    if (defaultCur === 'ask') {
+      setCurrency(null);
+    } else if (defaultCur && active.includes(defaultCur)) {
       setCurrency(defaultCur);
     } else if (active.length > 0) {
       setCurrency(active[0]);
@@ -91,6 +93,11 @@ export default function AddLoanScreen({ navigation, route }) {
 
     if (!personName.trim()) {
       Alert.alert('Missing Name', 'Please enter the person or entity name.');
+      return;
+    }
+
+    if (!currency) {
+      Alert.alert('Missing Currency', 'Please select a currency.');
       return;
     }
 
