@@ -362,16 +362,16 @@ export default function AllTransactionsScreen({ navigation, route }) {
               
               <View style={{ borderTopWidth: 0.5, borderColor: colors.border, marginTop: 4, paddingTop: 4 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.textMuted }}>Original Amount</Text>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.text }}>{loanSummary.currency} {fmt(loanSummary.amount)}</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.textMuted }}>Original Amount</Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.text }}>{loanSummary.currency} {fmt(loanSummary.amount)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderTopWidth: 0.5, borderColor: 'rgba(255,255,255,0.03)' }}>
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.textMuted }}>Total Repaid</Text>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: colors.success }}>{loanSummary.currency} {fmt(loanSummary.paidAmount)}</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.textMuted }}>Total Repaid</Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.success }}>{loanSummary.currency} {fmt(loanSummary.paidAmount)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderTopWidth: 0.5, borderColor: 'rgba(255,255,255,0.03)' }}>
-                  <Text style={{ fontSize: 10, fontFamily: 'Inter_600SemiBold', color: colors.textMuted }}>Outstanding Balance</Text>
-                  <Text style={{ fontSize: 11, fontFamily: 'Inter_700Bold', color: loanSummary.status === 'Closed' ? colors.textMuted : '#F59E0B' }}>{loanSummary.currency} {fmt(loanSummary.outstandingAmount)}</Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter_600SemiBold', color: colors.textMuted }}>Outstanding Balance</Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: loanSummary.status === 'Closed' ? colors.textMuted : '#F59E0B' }}>{loanSummary.currency} {fmt(loanSummary.outstandingAmount)}</Text>
                 </View>
               </View>
             </GlassCard>
@@ -805,7 +805,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   tableHeaderCell: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: 'Inter_700Bold',
     color: colors.textMuted,
     letterSpacing: 0.3,
@@ -820,12 +820,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.05)',
   },
   tableBodyCellLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'Inter_700Bold',
     color: colors.textSecondary,
   },
   tableBodyCellVal: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'Inter_600SemiBold',
     color: colors.text,
   },

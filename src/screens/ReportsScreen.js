@@ -186,12 +186,12 @@ export default function ReportsScreen({ navigation }) {
     return (
       <View style={{ marginTop: 12 }}>
         <Text style={[typography.sectionLabel, { marginBottom: 8 }]}>{title}</Text>
-        <GlassCard style={{ padding: 14 }}>
+        <GlassCard style={{ borderRadius: 16 }} contentStyle={{ padding: 12 }}>
           {/* Table Header */}
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6, marginBottom: 6 }}>
             <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
-            <Text style={{ flex: 1.6, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>AMOUNT</Text>
-            <Text style={{ flex: 0.6, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>SHARE</Text>
+            <Text style={{ flex: 2, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right', paddingRight: 12 }}>AMOUNT</Text>
+            <Text style={{ flex: 0.8, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>SHARE</Text>
           </View>
           {/* Table Rows */}
           {items.map((item, idx) => {
@@ -199,10 +199,10 @@ export default function ReportsScreen({ navigation }) {
             return (
               <View key={item.label} style={{ flexDirection: 'row', paddingVertical: 8, borderBottomWidth: idx < 2 ? 1 : 0, borderBottomColor: colors.border + '15', alignItems: 'center' }}>
                 <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
-                <Text style={{ flex: 1.6, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+                <Text style={{ flex: 2, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right', paddingRight: 12 }}>
                   {currency} {fmt(item.value)}
                 </Text>
-                <Text style={{ flex: 0.6, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.textSecondary, textAlign: 'right' }}>
+                <Text style={{ flex: 0.8, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.textSecondary, textAlign: 'right' }}>
                   {pct.toFixed(0)}%
                 </Text>
               </View>
@@ -223,21 +223,21 @@ export default function ReportsScreen({ navigation }) {
     return (
       <View style={{ marginTop: 12, marginBottom: 12 }}>
         <Text style={[typography.sectionLabel, { marginBottom: 8 }]}>OWNERSHIP BREAKDOWN</Text>
-        <GlassCard style={{ padding: 14 }}>
+        <GlassCard style={{ borderRadius: 16 }} contentStyle={{ padding: 12 }}>
           {/* Table Header */}
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6, marginBottom: 6 }}>
             <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
-            <Text style={{ flex: 1.25, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.success, textAlign: 'right' }}>INCOME</Text>
-            <Text style={{ flex: 1.25, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.danger, textAlign: 'right' }}>EXPENSE</Text>
+            <Text style={{ flex: 1.5, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.success, textAlign: 'right', paddingRight: 10 }}>INCOME</Text>
+            <Text style={{ flex: 1.5, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.danger, textAlign: 'right' }}>EXPENSE</Text>
           </View>
           {/* Table Rows */}
           {items.map((item, idx) => (
             <View key={item.label} style={{ flexDirection: 'row', paddingVertical: 8, borderBottomWidth: idx < 2 ? 1 : 0, borderBottomColor: colors.border + '15', alignItems: 'center' }}>
               <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
-              <Text style={{ flex: 1.25, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+              <Text style={{ flex: 1.5, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right', paddingRight: 10 }}>
                 {currency} {fmt(item.income)}
               </Text>
-              <Text style={{ flex: 1.25, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+              <Text style={{ flex: 1.5, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
                 {currency} {fmt(item.expense)}
               </Text>
             </View>
@@ -261,7 +261,7 @@ export default function ReportsScreen({ navigation }) {
       </ScrollView>
 
       <View style={{ paddingHorizontal: 18 }}>
-        <GlassCard style={styles.unifiedSummaryCard}>
+        <GlassCard style={styles.unifiedSummaryCard} contentStyle={styles.unifiedSummaryCardContent}>
           <LinearGradient colors={[accentColor + '10', 'transparent']} style={StyleSheet.absoluteFillObject} start={{x:0, y:0}} end={{x:1, y:1}} />
           
           <View style={styles.usRow}>
@@ -308,7 +308,7 @@ export default function ReportsScreen({ navigation }) {
         {overviewData.breakdown.length === 0 ? (
           <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No expenses in this period</Text></View>
         ) : (
-          <GlassCard style={styles.breakdownCard}>
+          <GlassCard style={styles.breakdownCard} contentStyle={styles.breakdownCardContent}>
             {overviewData.breakdown.map((item) => (
               <View key={item.category} style={styles.breakdownRow}>
                 <View style={styles.bRowTop}>
@@ -345,7 +345,7 @@ export default function ReportsScreen({ navigation }) {
 
       return (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 20 }}>
-          <GlassCard style={styles.tableCard}>
+          <GlassCard style={styles.tableCard} contentStyle={styles.tableCardContent}>
             <View style={[styles.tr, styles.trHeader]}>
               <Text style={[styles.th, { width: 100, textAlign: 'left' }]}>Category</Text>
               {months.map(m => <Text key={m} style={styles.th}>{monthName(m)}</Text>)}
@@ -394,7 +394,7 @@ export default function ReportsScreen({ navigation }) {
     return (
       <FadeInView delay={0}>
         <View style={{ paddingHorizontal: 18, paddingBottom: 20 }}>
-          <GlassCard style={styles.tableCard}>
+          <GlassCard style={styles.tableCard} contentStyle={styles.tableCardContent}>
             <View style={[styles.tr, styles.trHeader]}>
               <Text style={[styles.th, { flex: 1.2, textAlign: 'left' }]}>Month</Text>
               {showAED && <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>AED</Text>}
@@ -476,7 +476,7 @@ export default function ReportsScreen({ navigation }) {
         <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
         
         <View style={{ paddingHorizontal: 18 }}>
-          <GlassCard style={styles.unifiedSummaryCard}>
+          <GlassCard style={styles.unifiedSummaryCard} contentStyle={styles.unifiedSummaryCardContent}>
             <LinearGradient colors={[colors.accentIndigo + '10', 'transparent']} style={StyleSheet.absoluteFillObject} start={{x:0, y:0}} end={{x:1, y:1}} />
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -572,19 +572,19 @@ export default function ReportsScreen({ navigation }) {
               const progress = Math.min(100, (inv.total_invested / (inv.target_amount || inv.total_invested || 1)) * 100);
 
               return (
-                <GlassCard key={inv.id} style={{ marginBottom: 8, borderRadius: 12 }} contentStyle={{ paddingVertical: 10, paddingHorizontal: 14 }}>
+                <GlassCard key={inv.id} style={{ marginBottom: 8, borderRadius: 12 }} contentStyle={{ paddingVertical: 8, paddingHorizontal: 12 }}>
                   <TouchableOpacity onPress={() => toggleExpand(inv.id)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1, marginRight: 10 }}>
-                      <Text style={{ ...typography.bodyMedium, fontFamily: 'Inter_700Bold', color: colors.text }}>{inv.name}</Text>
-                      <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.text }}>{inv.name}</Text>
+                      <Text style={{ fontSize: 10, fontFamily: 'Inter_500Medium', color: colors.textMuted, marginTop: 2 }}>
                         {inv.type} · {inv.tenure_value} {inv.tenure_type}
                       </Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ ...typography.bodyMedium, fontFamily: 'Inter_700Bold', color: colors.accentIndigo }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter_700Bold', color: colors.accentIndigo }}>
                         {inv.currency} {fmt(inv.total_invested)}
                       </Text>
-                      <Text style={{ ...typography.caption, color: colors.textSecondary, marginTop: 4 }}>
+                      <Text style={{ fontSize: 9, fontFamily: 'Inter_400Regular', color: colors.textSecondary, marginTop: 2 }}>
                         {progress.toFixed(0)}% Target
                       </Text>
                     </View>
@@ -695,7 +695,7 @@ export default function ReportsScreen({ navigation }) {
           key={l.id}
           onPress={() => navigation.navigate('LoanDetails', { loanId: l.id })}
         >
-          <GlassCard style={{ marginBottom: 8, borderRadius: 12 }} contentStyle={{ paddingVertical: 10, paddingHorizontal: 14 }}>
+          <GlassCard style={{ marginBottom: 8, borderRadius: 12 }} contentStyle={{ paddingVertical: 8, paddingHorizontal: 12 }}>
             <View style={styles.rowBetween}>
               <View style={{ flex: 1, marginRight: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -943,7 +943,7 @@ export default function ReportsScreen({ navigation }) {
         {/* Custom Date Modal */}
         <Modal visible={showCustomModal} transparent animationType="fade">
           <View style={styles.overlay}>
-            <GlassCard style={styles.modalCard}>
+            <GlassCard style={styles.modalCard} contentStyle={styles.modalCardContent}>
               <Text style={styles.modalTitle}>Custom Date Range</Text>
               
               <View style={styles.datePickerRow}>
@@ -1026,7 +1026,8 @@ const styles = StyleSheet.create({
   scroll: { paddingBottom: 40 },
 
   // Unified Summary - Vertical Rows (Reduced Height)
-  unifiedSummaryCard: { paddingHorizontal: 16, paddingVertical: 14, marginBottom: 18, borderRadius: 16, overflow: 'hidden' },
+  unifiedSummaryCard: { marginBottom: 12, borderRadius: 16, overflow: 'hidden' },
+  unifiedSummaryCardContent: { paddingHorizontal: 16, paddingVertical: 12 },
   usRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
   usIconWrap: { width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   usLabel: { ...typography.bodySmall, fontSize: 11, fontFamily: 'Inter_600SemiBold', color: colors.textSecondary },
@@ -1035,7 +1036,8 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
   // Breakdown
-  breakdownCard: { padding: 16, paddingTop: 10 },
+  breakdownCard: { marginBottom: 16, borderRadius: 24 },
+  breakdownCardContent: { paddingHorizontal: 16, paddingBottom: 16, paddingTop: 10 },
   breakdownRow: { marginTop: 14 },
   bRowTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   bIconWrap: { width: 24, height: 24, borderRadius: 6, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
@@ -1045,7 +1047,8 @@ const styles = StyleSheet.create({
   bBarFill: { height: '100%', borderRadius: 3 },
 
   // Trend Table
-  tableCard: { padding: 14, borderRadius: 16 },
+  tableCard: { marginBottom: 16, borderRadius: 16 },
+  tableCardContent: { padding: 14 },
   tr: { flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border, alignItems: 'center' },
   trHeader: { borderBottomWidth: 2, paddingVertical: 8 },
   th: { ...typography.label, width: 80, textAlign: 'right' },
@@ -1056,7 +1059,8 @@ const styles = StyleSheet.create({
 
   // Modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', padding: 20 },
-  modalCard: { padding: 20 },
+  modalCard: { borderRadius: 24 },
+  modalCardContent: { padding: 20 },
   modalTitle: { color: colors.text, fontSize: 17, fontFamily: 'Inter_700Bold', marginBottom: 20 },
   datePickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   datePickerBtn: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: colors.cardSolid, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
