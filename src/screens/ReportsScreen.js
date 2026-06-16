@@ -184,28 +184,34 @@ export default function ReportsScreen({ navigation }) {
     items.sort((a, b) => b.value - a.value);
 
     return (
-      <View style={{ marginTop: 20 }}>
-        <Text style={[typography.sectionLabel, { marginBottom: 12 }]}>{title}</Text>
-        <GlassCard style={styles.breakdownCard}>
-          {items.map((item, idx) => {
-            const pct = total > 0 ? (item.value / total) * 100 : 0;
-            return (
-              <View key={item.label} style={[styles.breakdownRow, idx === 0 && { marginTop: 4 }]}>
-                <View style={styles.bRowTop}>
-                  <View style={[styles.bIconWrap, { backgroundColor: item.color + '15' }]}>
-                    <Ionicons name="person-outline" size={12} color={item.color} />
+      <View style={{ marginTop: 12 }}>
+        <Text style={[typography.sectionLabel, { marginBottom: 6 }]}>{title}</Text>
+        <GlassCard style={{ padding: 12, paddingVertical: 10 }}>
+          <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.border + '30', flexDirection: 'row', overflow: 'hidden', marginBottom: 8 }}>
+            {items.map((item) => {
+              const pct = total > 0 ? (item.value / total) * 100 : 0;
+              if (pct <= 0) return null;
+              return (
+                <View key={item.label} style={{ width: `${pct}%`, backgroundColor: item.color }} />
+              );
+            })}
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+            {items.map((item) => {
+              const pct = total > 0 ? (item.value / total) * 100 : 0;
+              return (
+                <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', minWidth: '28%' }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.color, marginRight: 5 }} />
+                  <View>
+                    <Text style={{ fontSize: 9, fontFamily: 'Inter_500Medium', color: colors.textMuted }}>{item.label}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.text }}>
+                      {currency} {fmt(item.value)} ({pct.toFixed(0)}%)
+                    </Text>
                   </View>
-                  <Text style={styles.bCategory}>{item.label}</Text>
-                  <Text style={styles.bAmount} numberOfLines={1} adjustsFontSizeToFit>
-                    {currency} {fmt(item.value)}
-                  </Text>
                 </View>
-                <View style={styles.bBarTrack}>
-                  <View style={[styles.bBarFill, { width: `${pct}%`, backgroundColor: item.color }]} />
-                </View>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
         </GlassCard>
       </View>
     );
