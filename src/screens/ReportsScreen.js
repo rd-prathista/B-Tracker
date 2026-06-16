@@ -177,41 +177,71 @@ export default function ReportsScreen({ navigation }) {
   const renderOwnershipBreakdown = (breakdownData, total, title) => {
     if (!breakdownData) return null;
     const items = [
-      { label: 'Prathista', value: breakdownData.SELF || 0, color: colors.successLight || colors.success },
-      { label: 'Praveen', value: breakdownData.SPOUSE || 0, color: colors.accentTeal },
-      { label: 'Other', value: breakdownData.OTHER || 0, color: colors.textMuted }
+      { label: 'Prathista', value: breakdownData.SELF || 0 },
+      { label: 'Praveen', value: breakdownData.SPOUSE || 0 },
+      { label: 'Other', value: breakdownData.OTHER || 0 }
     ];
     items.sort((a, b) => b.value - a.value);
 
     return (
       <View style={{ marginTop: 12 }}>
-        <Text style={[typography.sectionLabel, { marginBottom: 6 }]}>{title}</Text>
-        <GlassCard style={{ padding: 12, paddingVertical: 10 }}>
-          <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.border + '30', flexDirection: 'row', overflow: 'hidden', marginBottom: 8 }}>
-            {items.map((item) => {
-              const pct = total > 0 ? (item.value / total) * 100 : 0;
-              if (pct <= 0) return null;
-              return (
-                <View key={item.label} style={{ width: `${pct}%`, backgroundColor: item.color }} />
-              );
-            })}
+        <Text style={[typography.sectionLabel, { marginBottom: 8 }]}>{title}</Text>
+        <GlassCard style={{ padding: 14 }}>
+          {/* Table Header */}
+          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6, marginBottom: 6 }}>
+            <Text style={{ flex: 1.5, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
+            <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>AMOUNT</Text>
+            <Text style={{ flex: 0.8, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>SHARE</Text>
           </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-            {items.map((item) => {
-              const pct = total > 0 ? (item.value / total) * 100 : 0;
-              return (
-                <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', minWidth: '28%' }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.color, marginRight: 5 }} />
-                  <View>
-                    <Text style={{ fontSize: 9, fontFamily: 'Inter_500Medium', color: colors.textMuted }}>{item.label}</Text>
-                    <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.text }}>
-                      {currency} {fmt(item.value)} ({pct.toFixed(0)}%)
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
+          {/* Table Rows */}
+          {items.map((item, idx) => {
+            const pct = total > 0 ? (item.value / total) * 100 : 0;
+            return (
+              <View key={item.label} style={{ flexDirection: 'row', paddingVertical: 8, borderBottomWidth: idx < 2 ? 1 : 0, borderBottomColor: colors.border + '15', alignItems: 'center' }}>
+                <Text style={{ flex: 1.5, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
+                <Text style={{ flex: 1.2, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+                  {currency} {fmt(item.value)}
+                </Text>
+                <Text style={{ flex: 0.8, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.textSecondary, textAlign: 'right' }}>
+                  {pct.toFixed(0)}%
+                </Text>
+              </View>
+            );
+          })}
+        </GlassCard>
+      </View>
+    );
+  };
+
+  const renderCombinedOwnershipOverview = () => {
+    const items = [
+      { label: 'Prathista', income: overviewData.incomeBySource?.SELF || 0, expense: overviewData.expenseByFunding?.SELF || 0 },
+      { label: 'Praveen', income: overviewData.incomeBySource?.SPOUSE || 0, expense: overviewData.expenseByFunding?.SPOUSE || 0 },
+      { label: 'Other', income: overviewData.incomeBySource?.OTHER || 0, expense: overviewData.expenseByFunding?.OTHER || 0 }
+    ];
+
+    return (
+      <View style={{ marginTop: 12, marginBottom: 12 }}>
+        <Text style={[typography.sectionLabel, { marginBottom: 8 }]}>OWNERSHIP BREAKDOWN</Text>
+        <GlassCard style={{ padding: 14 }}>
+          {/* Table Header */}
+          <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6, marginBottom: 6 }}>
+            <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
+            <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.success, textAlign: 'right' }}>INCOME</Text>
+            <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.danger, textAlign: 'right' }}>EXPENSE</Text>
           </View>
+          {/* Table Rows */}
+          {items.map((item, idx) => (
+            <View key={item.label} style={{ flexDirection: 'row', paddingVertical: 8, borderBottomWidth: idx < 2 ? 1 : 0, borderBottomColor: colors.border + '15', alignItems: 'center' }}>
+              <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
+              <Text style={{ flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+                {currency} {fmt(item.income)}
+              </Text>
+              <Text style={{ flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+                {currency} {fmt(item.expense)}
+              </Text>
+            </View>
+          ))}
         </GlassCard>
       </View>
     );
@@ -271,6 +301,9 @@ export default function ReportsScreen({ navigation }) {
           </View>
         </GlassCard>
 
+        {/* Combined Ownership Table above Spending Insights */}
+        {(overviewData.totalIncome > 0 || overviewData.totalExpense > 0) && renderCombinedOwnershipOverview()}
+
         <Text style={[typography.sectionLabel, { marginBottom: 14, marginTop: 10 }]}>SPENDING INSIGHTS</Text>
         {overviewData.breakdown.length === 0 ? (
           <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No expenses in this period</Text></View>
@@ -290,8 +323,6 @@ export default function ReportsScreen({ navigation }) {
             ))}
           </GlassCard>
         )}
-        {overviewData.totalIncome > 0 && renderOwnershipBreakdown(overviewData.incomeBySource, overviewData.totalIncome, 'INCOME BY SOURCE')}
-        {overviewData.totalExpense > 0 && renderOwnershipBreakdown(overviewData.expenseByFunding, overviewData.totalExpense, 'EXPENSES BY FUNDING SOURCE')}
       </View>
     </FadeInView>
   );
@@ -447,7 +478,7 @@ export default function ReportsScreen({ navigation }) {
         <View style={{ paddingHorizontal: 18 }}>
           <GlassCard style={styles.unifiedSummaryCard}>
             <LinearGradient colors={[colors.accentIndigo + '10', 'transparent']} style={StyleSheet.absoluteFillObject} start={{x:0, y:0}} end={{x:1, y:1}} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                 <View style={[styles.usIconWrap, { backgroundColor: colors.accentIndigo + '20' }]}>
                   <Ionicons name="briefcase-outline" size={14} color={colors.accentIndigo} />
