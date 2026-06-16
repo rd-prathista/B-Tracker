@@ -189,20 +189,20 @@ export default function ReportsScreen({ navigation }) {
         <GlassCard style={{ padding: 14 }}>
           {/* Table Header */}
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6, marginBottom: 6 }}>
-            <Text style={{ flex: 1.5, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
-            <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>AMOUNT</Text>
-            <Text style={{ flex: 0.8, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>SHARE</Text>
+            <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
+            <Text style={{ flex: 1.6, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>AMOUNT</Text>
+            <Text style={{ flex: 0.6, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary, textAlign: 'right' }}>SHARE</Text>
           </View>
           {/* Table Rows */}
           {items.map((item, idx) => {
             const pct = total > 0 ? (item.value / total) * 100 : 0;
             return (
               <View key={item.label} style={{ flexDirection: 'row', paddingVertical: 8, borderBottomWidth: idx < 2 ? 1 : 0, borderBottomColor: colors.border + '15', alignItems: 'center' }}>
-                <Text style={{ flex: 1.5, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
-                <Text style={{ flex: 1.2, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+                <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
+                <Text style={{ flex: 1.6, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
                   {currency} {fmt(item.value)}
                 </Text>
-                <Text style={{ flex: 0.8, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.textSecondary, textAlign: 'right' }}>
+                <Text style={{ flex: 0.6, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.textSecondary, textAlign: 'right' }}>
                   {pct.toFixed(0)}%
                 </Text>
               </View>
@@ -226,18 +226,18 @@ export default function ReportsScreen({ navigation }) {
         <GlassCard style={{ padding: 14 }}>
           {/* Table Header */}
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6, marginBottom: 6 }}>
-            <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
-            <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.success, textAlign: 'right' }}>INCOME</Text>
-            <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.danger, textAlign: 'right' }}>EXPENSE</Text>
+            <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.textSecondary }}>OWNER</Text>
+            <Text style={{ flex: 1.25, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.success, textAlign: 'right' }}>INCOME</Text>
+            <Text style={{ flex: 1.25, fontFamily: 'Inter_700Bold', fontSize: 12, color: colors.danger, textAlign: 'right' }}>EXPENSE</Text>
           </View>
           {/* Table Rows */}
           {items.map((item, idx) => (
             <View key={item.label} style={{ flexDirection: 'row', paddingVertical: 8, borderBottomWidth: idx < 2 ? 1 : 0, borderBottomColor: colors.border + '15', alignItems: 'center' }}>
-              <Text style={{ flex: 1.2, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
-              <Text style={{ flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+              <Text style={{ flex: 1, fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{item.label}</Text>
+              <Text style={{ flex: 1.25, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
                 {currency} {fmt(item.income)}
               </Text>
-              <Text style={{ flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
+              <Text style={{ flex: 1.25, fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text, textAlign: 'right' }}>
                 {currency} {fmt(item.expense)}
               </Text>
             </View>
@@ -572,7 +572,7 @@ export default function ReportsScreen({ navigation }) {
               const progress = Math.min(100, (inv.total_invested / (inv.target_amount || inv.total_invested || 1)) * 100);
 
               return (
-                <GlassCard key={inv.id} style={{ padding: 16, marginBottom: 12 }}>
+                <GlassCard key={inv.id} style={{ marginBottom: 8, borderRadius: 12 }} contentStyle={{ paddingVertical: 10, paddingHorizontal: 14 }}>
                   <TouchableOpacity onPress={() => toggleExpand(inv.id)} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1, marginRight: 10 }}>
                       <Text style={{ ...typography.bodyMedium, fontFamily: 'Inter_700Bold', color: colors.text }}>{inv.name}</Text>
