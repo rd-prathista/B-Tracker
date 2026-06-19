@@ -90,6 +90,7 @@ export const initDatabase = () => {
         notes TEXT,
         attachment_uri TEXT,
         is_archived INTEGER DEFAULT 0,
+        funded_by TEXT DEFAULT 'OTHER',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
       );
@@ -148,7 +149,7 @@ export const initDatabase = () => {
     const versionResult = db.getFirstSync("PRAGMA user_version;");
     const currentVersion = versionResult ? versionResult.user_version : 0;
 
-    if (currentVersion < 7) {
+    if (currentVersion < 8) {
       console.log(`Running database migration/repair (current version: ${currentVersion})`);
       
       // Temporarily disable foreign keys during schema alterations
@@ -360,10 +361,19 @@ export const initDatabase = () => {
         console.log("Database migration to version 7 successfully completed!");
       }
 
+      // v8 migration: add funded_by to investment_contributions
+      if (currentVersion < 8) {
+        try {
+          db.execSync("ALTER TABLE investment_contributions ADD COLUMN funded_by TEXT DEFAULT 'OTHER';");
+        } catch (e) { /* Column already exists */ }
+        db.execSync("PRAGMA user_version = 8;");
+        console.log("Database migration to version 8 successfully completed!");
+      }
+
       db.execSync("PRAGMA foreign_keys = ON;");
-      console.log(`Database migration/repair successfully completed to version 7!`);
+      console.log(`Database migration/repair successfully completed to version 8!`);
     } else {
-      // Version is already >= 7, ensure foreign keys are enabled
+      // Version is already >= 8, ensure foreign keys are enabled
       db.execSync("PRAGMA foreign_keys = ON;");
     }
 

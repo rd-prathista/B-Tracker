@@ -103,8 +103,8 @@ export const importBackupData = async (backupJson) => {
   // Restore Contributions
   if (data.contributions) {
     data.contributions.forEach(c => {
-      db.runSync('INSERT INTO investment_contributions (id, investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
-        [c.id, c.investment_id, c.amount, c.currency, c.contribution_date, c.notes, c.attachment_uri || null, c.is_archived || 0]);
+      db.runSync('INSERT INTO investment_contributions (id, investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived, funded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+        [c.id, c.investment_id, c.amount, c.currency, c.contribution_date, c.notes, c.attachment_uri || null, c.is_archived || 0, c.funded_by || 'OTHER']);
     });
   }
 

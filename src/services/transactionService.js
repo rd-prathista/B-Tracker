@@ -68,14 +68,14 @@ export const addInvestment = (data) => {
   
   // 2. Add 1st Contribution
   db.runSync(
-    `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes) VALUES (?, ?, ?, ?, ?)`,
-    [masterId, parseFloat(recurring_amount), currency, start_date, 'Initial Contribution']
+    `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes, funded_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    [masterId, parseFloat(recurring_amount), currency, start_date, 'Initial Contribution', funded_by || 'OTHER']
   );
 
   return masterId;
 };
 
-export const addContribution = (investmentId, amount, date, notes = '', attachmentUri = null) => {
+export const addContribution = (investmentId, amount, date, notes = '', attachmentUri = null, fundedBy = 'OTHER') => {
   const db = getDb();
   
   // 1. Get current status
@@ -84,8 +84,8 @@ export const addContribution = (investmentId, amount, date, notes = '', attachme
 
   // 2. Insert contribution
   db.runSync(
-    `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived) VALUES (?, ?, ?, ?, ?, ?, 0)`,
-    [investmentId, parseFloat(amount), master.currency, date, notes, attachmentUri]
+    `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived, funded_by) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+    [investmentId, parseFloat(amount), master.currency, date, notes, attachmentUri, fundedBy || 'OTHER']
   );
 
   // 3. Update master record
@@ -102,7 +102,7 @@ export const addContribution = (investmentId, amount, date, notes = '', attachme
   );
 };
 
-export const updateContribution = (id, { amount, date, notes, attachmentUri, masterUpdates }) => {
+export const updateContribution = (id, { amount, date, notes, attachmentUri, funded_by, masterUpdates }) => {
   const db = getDb();
   const contribution = db.getFirstSync(`SELECT * FROM investment_contributions WHERE id = ?`, [id]);
   if (!contribution) return;
@@ -113,6 +113,7 @@ export const updateContribution = (id, { amount, date, notes, attachmentUri, mas
   if (date !== undefined) { sets.push('contribution_date = ?'); params.push(date); }
   if (notes !== undefined) { sets.push('notes = ?'); params.push(notes); }
   if (attachmentUri !== undefined) { sets.push('attachment_uri = ?'); params.push(attachmentUri); }
+  if (funded_by !== undefined) { sets.push('funded_by = ?'); params.push(funded_by || 'OTHER'); }
 
   if (sets.length > 0) {
     params.push(id);
@@ -127,13 +128,12 @@ export const updateContribution = (id, { amount, date, notes, attachmentUri, mas
   const mParams = [newTotal];
 
   if (masterUpdates) {
-    const { name, category, tenure_value, tenure_type, target_amount, funded_by } = masterUpdates;
+    const { name, category, tenure_value, tenure_type, target_amount } = masterUpdates;
     if (name) { mUpdateSql += ', name = ?'; mParams.push(name); }
     if (category) { mUpdateSql += ', type = ?'; mParams.push(category); }
     if (tenure_value) { mUpdateSql += ', tenure_value = ?'; mParams.push(parseInt(tenure_value)); }
     if (tenure_type) { mUpdateSql += ', tenure_type = ?'; mParams.push(tenure_type); }
     if (target_amount !== undefined) { mUpdateSql += ', target_amount = ?'; mParams.push(target_amount ? parseFloat(target_amount) : null); }
-    if (funded_by !== undefined) { mUpdateSql += ', funded_by = ?'; mParams.push(funded_by || 'OTHER'); }
   }
 
   mParams.push(contribution.investment_id);
@@ -362,48 +362,54 @@ export const getActiveInvestmentsSummary = () => {
 
 export const getInvestmentAnalytics = (currency, ownerFilter) => {
   const db = getDb();
-  const ownerClause = ownerFilter && ownerFilter !== 'ALL' ? ' AND inv.funded_by = ?' : '';
-  const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter] : [];
   
-  const activeInvestments = db.getAllSync(
-    `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
-     FROM investments inv 
-     LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
-     WHERE inv.currency = ? AND (inv.status = 'Active' OR inv.status IS NULL)${ownerClause} ORDER BY inv.created_at DESC`,
-    [currency, ...ownerParams]
-  );
-
-  const completedInvestments = db.getAllSync(
-    `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
-     FROM investments inv 
-     LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
-     WHERE inv.currency = ? AND inv.status = 'Completed'${ownerClause} ORDER BY inv.created_at DESC`,
-    [currency, ...ownerParams]
-  );
-
-  const archivedInvestments = db.getAllSync(
-    `SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
-     FROM investments inv 
-     LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
-     WHERE inv.currency = ? AND inv.status = 'Archived'${ownerClause} ORDER BY inv.created_at DESC`,
-    [currency, ...ownerParams]
-  );
+  let activeInvestments, completedInvestments, archivedInvestments;
+  
+  if (ownerFilter && ownerFilter !== 'ALL') {
+    const query = (statusClause) => `
+      SELECT inv.id, inv.type, inv.name, inv.currency, inv.recurring_amount, inv.tenure_value, inv.tenure_type, inv.target_amount, inv.installments_paid,
+             SUM(ic.amount) as total_invested, inv.next_due_date, inv.status, inv.start_date, inv.notes, inv.created_at,
+             COALESCE(cat.icon, 'briefcase-outline') as icon
+      FROM investments inv
+      JOIN investment_contributions ic ON ic.investment_id = inv.id
+      LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
+      WHERE inv.currency = ? AND ${statusClause} AND ic.is_archived = 0 AND ic.funded_by = ?
+      GROUP BY inv.id
+      ORDER BY inv.created_at DESC
+    `;
+    
+    activeInvestments = db.getAllSync(query("(inv.status = 'Active' OR inv.status IS NULL)"), [currency, ownerFilter]);
+    completedInvestments = db.getAllSync(query("inv.status = 'Completed'"), [currency, ownerFilter]);
+    archivedInvestments = db.getAllSync(query("inv.status = 'Archived'"), [currency, ownerFilter]);
+  } else {
+    const query = (statusClause) => `
+      SELECT inv.*, COALESCE(cat.icon, 'briefcase-outline') as icon 
+      FROM investments inv 
+      LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
+      WHERE inv.currency = ? AND ${statusClause} 
+      ORDER BY inv.created_at DESC
+    `;
+    
+    activeInvestments = db.getAllSync(query("(inv.status = 'Active' OR inv.status IS NULL)"), [currency]);
+    completedInvestments = db.getAllSync(query("inv.status = 'Completed'"), [currency]);
+    archivedInvestments = db.getAllSync(query("inv.status = 'Archived'"), [currency]);
+  }
 
   const totalInvested = db.getFirstSync(
     `SELECT SUM(ic.amount) as total 
      FROM investment_contributions ic
      JOIN investments inv ON ic.investment_id = inv.id
-     WHERE ic.currency = ?${ownerClause}`,
-    [currency, ...ownerParams]
+     WHERE ic.currency = ? AND ic.is_archived = 0${ownerFilter && ownerFilter !== 'ALL' ? ' AND ic.funded_by = ?' : ''}`,
+    ownerFilter && ownerFilter !== 'ALL' ? [currency, ownerFilter] : [currency]
   )?.total || 0;
 
   const investmentBreakdown = db.getAllSync(`
-    SELECT inv.funded_by, SUM(ic.amount) as total 
+    SELECT ic.funded_by as funded_by, SUM(ic.amount) as total 
     FROM investment_contributions ic
     JOIN investments inv ON ic.investment_id = inv.id
-    WHERE ic.currency = ?${ownerClause}
-    GROUP BY inv.funded_by
-  `, [currency, ...ownerParams]);
+    WHERE ic.currency = ? AND ic.is_archived = 0
+    GROUP BY ic.funded_by
+  `, [currency]);
 
   const investmentByFunding = { SELF: 0, SPOUSE: 0, OTHER: 0 };
   investmentBreakdown.forEach(row => {
@@ -591,7 +597,7 @@ export const getReportData = (currency, startDate, endDate, search, archiveMode 
 
   const ownerClauseI = ownerFilter && ownerFilter !== 'ALL' ? ' AND income_source = ?' : '';
   const ownerClauseE = ownerFilter && ownerFilter !== 'ALL' ? ' AND funded_by = ?' : '';
-  const ownerClauseIc = ownerFilter && ownerFilter !== 'ALL' ? ' AND inv.funded_by = ?' : '';
+  const ownerClauseIc = ownerFilter && ownerFilter !== 'ALL' ? ' AND ic.funded_by = ?' : '';
   const ownerClauseEB = ownerFilter && ownerFilter !== 'ALL' ? ' AND e.funded_by = ?' : '';
   const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter] : [];
 
@@ -707,3 +713,113 @@ export const getSavingsTrends = (archiveMode = 'Active', ownerFilter) => {
   });
   return trends;
 };
+
+export const getOwnershipBalanceBreakdown = (currency) => {
+  const db = getDb();
+  
+  // Helper to get total income
+  const getIncome = (owner) => {
+    if (owner === 'TOTAL') {
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND is_archived = 0`, [currency])?.total || 0;
+    } else {
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND is_archived = 0 AND income_source = ?`, [currency, owner])?.total || 0;
+    }
+  };
+
+  // Helper to get total expense
+  const getExpense = (owner) => {
+    if (owner === 'TOTAL') {
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND is_archived = 0`, [currency])?.total || 0;
+    } else {
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND is_archived = 0 AND funded_by = ?`, [currency, owner])?.total || 0;
+    }
+  };
+
+  // Helper to get total investment
+  const getInvestment = (owner) => {
+    if (owner === 'TOTAL') {
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0`, [currency])?.total || 0;
+    } else {
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0 AND funded_by = ?`, [currency, owner])?.total || 0;
+    }
+  };
+
+  // Helper to get loan totals
+  const getLoansData = (owner) => {
+    let totalGiven = 0;
+    let totalRecovered = 0;
+    let totalBorrowed = 0;
+    let totalPaid = 0;
+
+    if (owner === 'TOTAL') {
+      totalGiven = db.getFirstSync(`SELECT SUM(amount) as total FROM loans WHERE type = 'I Gave' AND currency = ?`, [currency])?.total || 0;
+      totalRecovered = db.getFirstSync(`SELECT SUM(r.amount) as total FROM loan_repayments r JOIN loans l ON r.loan_id = l.id WHERE l.type = 'I Gave' AND l.currency = ?`, [currency])?.total || 0;
+      totalBorrowed = db.getFirstSync(`SELECT SUM(amount) as total FROM loans WHERE type = 'I Borrowed' AND currency = ?`, [currency])?.total || 0;
+      totalPaid = db.getFirstSync(`SELECT SUM(r.amount) as total FROM loan_repayments r JOIN loans l ON r.loan_id = l.id WHERE l.type = 'I Borrowed' AND l.currency = ?`, [currency])?.total || 0;
+    } else {
+      totalGiven = db.getFirstSync(`SELECT SUM(amount) as total FROM loans WHERE type = 'I Gave' AND currency = ? AND funded_by = ?`, [currency, owner])?.total || 0;
+      totalRecovered = db.getFirstSync(`SELECT SUM(r.amount) as total FROM loan_repayments r JOIN loans l ON r.loan_id = l.id WHERE l.type = 'I Gave' AND l.currency = ? AND l.funded_by = ?`, [currency, owner])?.total || 0;
+      totalBorrowed = db.getFirstSync(`SELECT SUM(amount) as total FROM loans WHERE type = 'I Borrowed' AND currency = ? AND funded_by = ?`, [currency, owner])?.total || 0;
+      totalPaid = db.getFirstSync(`SELECT SUM(r.amount) as total FROM loan_repayments r JOIN loans l ON r.loan_id = l.id WHERE l.type = 'I Borrowed' AND l.currency = ? AND l.funded_by = ?`, [currency, owner])?.total || 0;
+    }
+
+    const outstandingGiven = Math.max(0, totalGiven - totalRecovered);
+    const outstandingBorrowed = Math.max(0, totalBorrowed - totalPaid);
+    const loanImpact = outstandingBorrowed - outstandingGiven;
+
+    return { outstandingGiven, outstandingBorrowed, loanImpact };
+  };
+
+  const totalInc = getIncome('TOTAL');
+  const totalExp = getExpense('TOTAL');
+  const totalInv = getInvestment('TOTAL');
+  const totalLoans = getLoansData('TOTAL');
+  const totalBal = totalInc + totalLoans.outstandingBorrowed - totalExp - totalInv - totalLoans.outstandingGiven;
+
+  const prathistaInc = getIncome('SELF');
+  const prathistaExp = getExpense('SELF');
+  const prathistaInv = getInvestment('SELF');
+  const prathistaLoans = getLoansData('SELF');
+  const prathistaBal = prathistaInc + prathistaLoans.outstandingBorrowed - prathistaExp - prathistaInv - prathistaLoans.outstandingGiven;
+
+  const praveenInc = getIncome('SPOUSE');
+  const praveenExp = getExpense('SPOUSE');
+  const praveenInv = getInvestment('SPOUSE');
+  const praveenLoans = getLoansData('SPOUSE');
+  const praveenBal = praveenInc + praveenLoans.outstandingBorrowed - praveenExp - praveenInv - praveenLoans.outstandingGiven;
+
+  // Calculate Other by subtraction to ensure perfect balance alignment down to the cent
+  const otherInc = totalInc - prathistaInc - praveenInc;
+  const otherExp = totalExp - prathistaExp - praveenExp;
+  const otherInv = totalInv - prathistaInv - praveenInv;
+  const otherLoans = {
+    loanImpact: totalLoans.loanImpact - prathistaLoans.loanImpact - praveenLoans.loanImpact
+  };
+  const otherBal = totalBal - prathistaBal - praveenBal;
+
+  return {
+    prathista: {
+      income: prathistaInc,
+      expense: prathistaExp,
+      investment: prathistaInv,
+      loanImpact: prathistaLoans.loanImpact,
+      balance: prathistaBal
+    },
+    praveen: {
+      income: praveenInc,
+      expense: praveenExp,
+      investment: praveenInv,
+      loanImpact: praveenLoans.loanImpact,
+      balance: praveenBal
+    },
+    other: {
+      income: otherInc,
+      expense: otherExp,
+      investment: otherInv,
+      loanImpact: otherLoans.loanImpact,
+      balance: otherBal
+    },
+    totalBalance: totalBal
+  };
+};
+

@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment } from '../services/transactionService';
+import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment, getOwnershipBalanceBreakdown } from '../services/transactionService';
 import { getLoans, getLoanSummary } from '../services/loanService';
 import { getActiveCurrencies } from '../database/db';
 
@@ -76,12 +76,16 @@ export default function ReportsScreen({ navigation }) {
   const [loanSummary, setLoanSummary] = useState({ totalGiven: 0, totalBorrowed: 0, totalRecovered: 0, outstandingGiven: 0, outstandingBorrowed: 0 });
   const [loans, setLoans] = useState([]);
   const [loanSubTab, setLoanSubTab] = useState('I Gave');
+  
+  const [ownershipBalanceData, setOwnershipBalanceData] = useState(null);
+  const [expandedOwners, setExpandedOwners] = useState({ prathista: false, praveen: false, other: false });
 
   const loadData = () => {
     const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
     if (activeTab === 'Overview') {
       setOverviewData(getReportData(currency, start, end, searchQuery, archiveMode, ownerFilter));
       setInvestmentData(getInvestmentAnalytics(currency, ownerFilter));
+      setOwnershipBalanceData(getOwnershipBalanceBreakdown(currency));
     } else if (activeTab === 'Expense') {
       setCategoryTrends(getCategoryTrends(currency, archiveMode, ownerFilter));
     } else if (activeTab === 'Savings') {
@@ -213,6 +217,88 @@ export default function ReportsScreen({ navigation }) {
     );
   };
 
+  const toggleOwnerExpand = (ownerKey) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedOwners(prev => ({
+      ...prev,
+      [ownerKey]: !prev[ownerKey]
+    }));
+  };
+
+  const renderOwnershipBalanceBreakdown = () => {
+    if (!ownershipBalanceData) return null;
+
+    const owners = [
+      { key: 'prathista', label: 'Prathista', emoji: '👩', color: colors.primary, data: ownershipBalanceData.prathista },
+      { key: 'praveen', label: 'Praveen', emoji: '👨', color: colors.accentTeal, data: ownershipBalanceData.praveen },
+      { key: 'other', label: 'Other', emoji: '👤', color: colors.textSecondary, data: ownershipBalanceData.other }
+    ];
+
+    return (
+      <View style={{ marginTop: 12, marginBottom: 4 }}>
+        <Text style={[typography.sectionLabel, { marginBottom: 8 }]}>OWNERSHIP BALANCE BREAKDOWN</Text>
+        <GlassCard style={{ borderRadius: 16 }} contentStyle={{ padding: 14 }}>
+          {owners.map((owner, idx) => {
+            const isExpanded = expandedOwners[owner.key];
+            const balanceColor = owner.data.balance >= 0 ? colors.text : colors.danger;
+            
+            return (
+              <View key={owner.key} style={{ borderBottomWidth: idx < 2 ? 1 : 0, borderBottomColor: colors.border + '15', paddingVertical: 10 }}>
+                <TouchableOpacity 
+                  onPress={() => toggleOwnerExpand(owner.key)} 
+                  activeOpacity={0.7}
+                  style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontSize: 16 }}>{owner.emoji}</Text>
+                    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 14, color: colors.text }}>{owner.label}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 14, color: balanceColor }}>
+                      {owner.data.balance < 0 ? '-' : ''}{currency} {fmt(Math.abs(owner.data.balance))}
+                    </Text>
+                    <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+                  </View>
+                </TouchableOpacity>
+
+                {isExpanded && (
+                  <View style={{ marginTop: 10, paddingLeft: 24, gap: 6 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Income</Text>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.success }}>{currency} {fmt(owner.data.income)}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Expense</Text>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.danger }}>-{currency} {fmt(owner.data.expense)}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Investment</Text>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.accentIndigo }}>-{currency} {fmt(owner.data.investment)}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Loan Impact</Text>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: owner.data.loanImpact >= 0 ? colors.success : colors.danger }}>
+                        {owner.data.loanImpact >= 0 ? '+' : ''}{currency} {fmt(owner.data.loanImpact)}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+
+          {/* Total Summary Footer Row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10, marginTop: 6, alignItems: 'center' }}>
+            <Text style={{ fontFamily: 'Inter_800ExtraBold', fontSize: 13, color: colors.textSecondary }}>Total</Text>
+            <Text style={{ fontFamily: 'Inter_800ExtraBold', fontSize: 14, color: accentColor }}>
+              {ownershipBalanceData.totalBalance < 0 ? '-' : ''}{currency} {fmt(Math.abs(ownershipBalanceData.totalBalance))}
+            </Text>
+          </View>
+        </GlassCard>
+      </View>
+    );
+  };
+
   const renderCombinedOwnershipOverview = () => {
     const items = [
       { label: 'Prathista', income: overviewData.incomeBySource?.SELF || 0, expense: overviewData.expenseByFunding?.SELF || 0 },
@@ -300,6 +386,9 @@ export default function ReportsScreen({ navigation }) {
             </Text>
           </View>
         </GlassCard>
+
+        {/* Ownership Balance Breakdown */}
+        {renderOwnershipBalanceBreakdown()}
 
         {/* Combined Ownership Table above Spending Insights */}
         {(overviewData.totalIncome > 0 || overviewData.totalExpense > 0) && renderCombinedOwnershipOverview()}

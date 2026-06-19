@@ -136,7 +136,7 @@ export default function AddTransactionScreen({ navigation, route }) {
           setTenureValue(String(master.tenure_value || ''));
           setTenureType(master.tenure_type || 'Months');
           setTargetAmount(master.target_amount ? String(master.target_amount) : '');
-          setOwnership(master.funded_by || 'OTHER');
+          setOwnership(t.funded_by || 'OTHER');
         }
       } else {
         setCategory(t.category || '');
@@ -264,13 +264,13 @@ export default function AddTransactionScreen({ navigation, route }) {
             date: isoDate,
             notes,
             attachmentUri: attachmentStr,
+            funded_by: ownership,
             masterUpdates: {
               name: invName,
               category,
               tenure_value: tenureValue,
               tenure_type: tenureType,
               target_amount: targetAmount,
-              funded_by: ownership,
             }
           });
         } else {
@@ -301,7 +301,7 @@ export default function AddTransactionScreen({ navigation, route }) {
           });
           setToastMessage('✓ Investment saved successfully');
         } else {
-          addContribution(selectedInvestmentId, amount, isoDate, notes, attachmentStr);
+          addContribution(selectedInvestmentId, amount, isoDate, notes, attachmentStr, ownership);
           setToastMessage('✓ Contribution added successfully');
         }
       } else {
@@ -554,7 +554,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               </FadeInView>
             )}
 
-            {(!isInvestment || mode === 'setup' || isEdit) && (
+            {(!isInvestment || mode === 'setup' || mode === 'contribution' || isEdit) && (
               <FadeInView delay={200} style={{ marginBottom: 20 }}>
                 <Text style={styles.sectionLabel}>{isIncome ? 'INCOME SOURCE' : 'FUNDED BY'}</Text>
                 <View style={styles.typeToggleRow}>
