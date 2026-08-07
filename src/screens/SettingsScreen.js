@@ -12,17 +12,28 @@ import {
   getLoggedInEmail,
   firebaseLogout
 } from '../services/firebaseSyncService';
-import { getAppSettings, updateAppSettings, getActiveCurrencies, activateCurrency, deactivateCurrency } from '../database/db';
+import { getAppSettings, updateAppSettings, getActiveCurrencies, activateCurrency, deactivateCurrency, getDb } from '../database/db';
 import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import FadeInView from '../components/FadeInView';
 import { checkBiometricsAvailability, isBiometricsEnabledInSettings } from '../services/biometricService';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function SettingsScreen({ navigation, route }) {
   const { onLogout } = route.params || {};
   const [syncLoading, setSyncLoading] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [userEmail, setUserEmail] = useState(null);
+  // Export Transactions
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportRange, setExportRange] = useState('this_month'); // 'this_month' | 'prev_month' | 'custom'
+  const [exportFromDate, setExportFromDate] = useState(new Date());
+  const [exportToDate, setExportToDate] = useState(new Date());
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Auth Modal State
   const [authModalVisible, setAuthModalVisible] = useState(false);
@@ -235,6 +246,149 @@ export default function SettingsScreen({ navigation, route }) {
     }
   };
 
+  // ── EXPORT TRANSACTIONS ────────────────────────────────────────────────────
+  const getExportDateRange = () => {
+    const now = new Date();
+    if (exportRange === 'this_month') {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from, to };
+    }
+    if (exportRange === 'prev_month') {
+      const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const to   = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { from, to };
+    }
+    return { from: exportFromDate, to: exportToDate };
+  };
+
+  const toSQLDate = (d) => d.toISOString().split('T')[0];
+
+  const buildFileName = () => {
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const now = new Date();
+    if (exportRange === 'this_month') {
+      return `BTracker_${MONTHS[now.getMonth()]}_${now.getFullYear()}.json`;
+    }
+    if (exportRange === 'prev_month') {
+      const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return `BTracker_${MONTHS[d.getMonth()]}_${d.getFullYear()}.json`;
+    }
+    return `BTracker_${toSQLDate(exportFromDate)}_to_${toSQLDate(exportToDate)}.json`;
+  };
+
+  const handleExportTransactions = async () => {
+    try {
+      setExportLoading(true);
+      const db = getDb();
+      const { from, to } = getExportDateRange();
+      const fromStr = toSQLDate(from);
+      const toStr   = toSQLDate(to);
+
+      const query = (table, dateCol) =>
+        db.getAllSync(
+          `SELECT * FROM ${table} WHERE date(${dateCol}) >= ? AND date(${dateCol}) <= ?`,
+          [fromStr, toStr]
+        );
+
+      // Borrowing repayments need a join to get the repayment date
+      const borrowingRepayments = db.getAllSync(
+        `SELECT r.* FROM loan_repayments r
+         JOIN loans l ON r.loan_id = l.id
+         WHERE l.type = 'I Borrowed'
+           AND date(r.date) >= ? AND date(r.date) <= ?`,
+        [fromStr, toStr]
+      );
+
+      const payload = {
+        app_version: '1.0',
+        exported_at: new Date().toISOString(),
+        from_date:   fromStr,
+        to_date:     toStr,
+        income:                   query('income',                    'date'),
+        expenses:                 query('expenses',                  'date'),
+        investments:              query('investments',               'start_date'),
+        investment_contributions: query('investment_contributions',  'contribution_date'),
+        borrowing:                query('loans',                     'start_date'),
+        borrowing_repayments:     borrowingRepayments,
+      };
+
+      const json     = JSON.stringify(payload, null, 2);
+      const fileName = buildFileName();
+      const fileUri  = FileSystem.documentDirectory + fileName;
+
+      await FileSystem.writeAsStringAsync(fileUri, json, { encoding: 'utf8' });
+
+      setExportModalVisible(false);
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: `Save ${fileName}`,
+          UTI: 'public.json',
+        });
+      } else {
+        Alert.alert('Exported', `Saved as:\n${fileName}`);
+      }
+    } catch (e) {
+      console.error('Export error:', e);
+      Alert.alert('Export Failed', e.message || 'Unknown error');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+  // ── END EXPORT TRANSACTIONS ────────────────────────────────────────────────
+
+  // ── TEMPORARY DEBUG EXPORT (DISABLED — export complete) ────────────────────
+  /*
+  const handleExportJSON = async () => {
+    try {
+      setExportLoading(true);
+      const db = getDb();
+
+      const readTable = (table) => {
+        try { return db.getAllSync(`SELECT * FROM ${table}`); }
+        catch (e) { return []; }
+      };
+
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        income:                   readTable('income'),
+        expenses:                 readTable('expenses'),
+        investments:              readTable('investments'),
+        investment_contributions: readTable('investment_contributions'),
+        loans:                    readTable('loans'),
+        loan_repayments:          readTable('loan_repayments'),
+        categories:               readTable('categories'),
+        reminders:                readTable('reminders'),
+        credit_cards:             readTable('credit_cards'),
+      };
+
+      const json = JSON.stringify(payload, null, 2);
+      const fileUri = FileSystem.documentDirectory + 'BTracker_Live_Export.json';
+      await FileSystem.writeAsStringAsync(fileUri, json, { encoding: 'utf8' });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Save BTracker_Live_Export.json',
+          UTI: 'public.json',
+        });
+      } else {
+        Alert.alert('Exported', `File saved to:\n${fileUri}`);
+      }
+    } catch (e) {
+      console.error('Export failed:', e);
+      Alert.alert('Export Failed', e.message || 'Unknown error');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+  */
+  // ── END TEMPORARY DEBUG EXPORT ──────────────────────────────────────────────
+
   const getCurrencyModeLabel = (mode) => {
     if (mode === 'ask') return 'Ask Every Time';
     if (mode === 'INR') return 'Default to INR';
@@ -357,6 +511,22 @@ export default function SettingsScreen({ navigation, route }) {
             </GlassCard>
           </FadeInView>
 
+          {/* ── EXPORT TRANSACTIONS ── */}
+          <FadeInView delay={175}>
+            <Text style={[typography.sectionLabel, { marginTop: 20 }]}>DATA EXPORT</Text>
+            <GlassCard style={styles.group}>
+              <SettingItem
+                icon="download-outline"
+                label="Export Transactions"
+                sublabel="Export income, expenses, investments & loans as JSON"
+                color={colors.accentIndigo}
+                onPress={() => setExportModalVisible(true)}
+              />
+            </GlassCard>
+            <Text style={styles.hint}>Export your transaction records for backup or Excel conversion.</Text>
+          </FadeInView>
+
+          {/* ── END TEMPORARY ── */}
 
           <FadeInView delay={200}>
             <Text style={[typography.sectionLabel, { marginTop: 20 }]}>APP</Text>
@@ -513,6 +683,91 @@ export default function SettingsScreen({ navigation, route }) {
             </GlassCard>
           </View>
         </Modal>
+
+        {/* ── EXPORT TRANSACTIONS MODAL ── */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={exportModalVisible}
+          onRequestClose={() => setExportModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <GlassCard style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Export Transactions</Text>
+              <Text style={styles.modalSub}>Select the date range for your export.</Text>
+
+              {/* Range Options */}
+              {[
+                { key: 'this_month', label: 'This Month' },
+                { key: 'prev_month', label: 'Previous Month' },
+                { key: 'custom',     label: 'Custom Date Range' },
+              ].map(opt => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.exportOption, exportRange === opt.key && styles.exportOptionActive]}
+                  onPress={() => setExportRange(opt.key)}
+                >
+                  <View style={[styles.exportRadio, exportRange === opt.key && styles.exportRadioActive]}>
+                    {exportRange === opt.key && <View style={styles.exportRadioDot} />}
+                  </View>
+                  <Text style={[styles.exportOptionText, exportRange === opt.key && { color: colors.text }]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+              {/* Custom Date Pickers */}
+              {exportRange === 'custom' && (
+                <View style={styles.customDates}>
+                  <TouchableOpacity style={styles.datePill} onPress={() => setShowFromPicker(true)}>
+                    <Ionicons name="calendar-outline" size={14} color={colors.accentIndigo} />
+                    <Text style={styles.datePillText}>From: {toSQLDate(exportFromDate)}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.datePill} onPress={() => setShowToPicker(true)}>
+                    <Ionicons name="calendar-outline" size={14} color={colors.accentIndigo} />
+                    <Text style={styles.datePillText}>To: {toSQLDate(exportToDate)}</Text>
+                  </TouchableOpacity>
+                  {showFromPicker && (
+                    <DateTimePicker
+                      value={exportFromDate}
+                      mode="date"
+                      display="default"
+                      maximumDate={exportToDate}
+                      onChange={(_, d) => { setShowFromPicker(false); if (d) setExportFromDate(d); }}
+                    />
+                  )}
+                  {showToPicker && (
+                    <DateTimePicker
+                      value={exportToDate}
+                      mode="date"
+                      display="default"
+                      minimumDate={exportFromDate}
+                      maximumDate={new Date()}
+                      onChange={(_, d) => { setShowToPicker(false); if (d) setExportToDate(d); }}
+                    />
+                  )}
+                </View>
+              )}
+
+              {/* Actions */}
+              <TouchableOpacity
+                style={[styles.primaryBtn, { marginTop: 20, backgroundColor: colors.accentIndigo }, exportLoading && { opacity: 0.7 }]}
+                onPress={handleExportTransactions}
+                disabled={exportLoading}
+              >
+                {exportLoading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.primaryBtnText}>Export JSON</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setExportModalVisible(false)} disabled={exportLoading}>
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </GlassCard>
+          </View>
+        </Modal>
+        {/* ── END EXPORT MODAL ── */}
+
       </SafeAreaView>
 
     </AmbientBackground>
@@ -562,6 +817,17 @@ const styles = StyleSheet.create({
   toggleTrackActive: { backgroundColor: colors.accentTeal + '80' },
   toggleThumb: { width: 16, height: 16, borderRadius: 8, backgroundColor: colors.textMuted },
   toggleThumbActive: { backgroundColor: colors.accentTeal, transform: [{ translateX: 16 }] },
+
+  // Export Transactions modal
+  exportOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 4, borderRadius: 10, marginBottom: 4 },
+  exportOptionActive: { backgroundColor: colors.accentIndigo + '12' },
+  exportOptionText: { ...typography.bodyMedium, color: colors.textSecondary, marginLeft: 12 },
+  exportRadio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.textMuted, alignItems: 'center', justifyContent: 'center' },
+  exportRadioActive: { borderColor: colors.accentIndigo },
+  exportRadioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accentIndigo },
+  customDates: { marginTop: 10, gap: 10 },
+  datePill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.accentIndigo + '15', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: colors.accentIndigo + '30' },
+  datePillText: { ...typography.bodyMedium, color: colors.text },
 });
 
 
