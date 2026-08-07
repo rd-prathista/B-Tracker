@@ -78,6 +78,7 @@ export const initDatabase = () => {
         start_date TEXT NOT NULL,
         notes TEXT,
         funded_by TEXT DEFAULT 'OTHER',
+        completed_installments INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -90,6 +91,7 @@ export const initDatabase = () => {
         notes TEXT,
         attachment_uri TEXT,
         is_archived INTEGER DEFAULT 0,
+        is_opening_balance INTEGER DEFAULT 0,
         funded_by TEXT DEFAULT 'OTHER',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
@@ -121,6 +123,8 @@ export const initDatabase = () => {
         status TEXT DEFAULT 'Active',
         is_archived INTEGER DEFAULT 0,
         funded_by TEXT DEFAULT 'OTHER',
+        is_opening_balance INTEGER DEFAULT 0,
+        monthly_emi REAL DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -381,10 +385,27 @@ export const initDatabase = () => {
         console.log("Database migration to version 17 successfully completed!");
       }
 
+      if (currentVersion < 18) {
+        try {
+          db.execSync("ALTER TABLE investments ADD COLUMN completed_installments INTEGER DEFAULT 0;");
+        } catch (e) { /* Column already exists */ }
+        try {
+          db.execSync("ALTER TABLE investment_contributions ADD COLUMN is_opening_balance INTEGER DEFAULT 0;");
+        } catch (e) { /* Column already exists */ }
+        try {
+          db.execSync("ALTER TABLE loans ADD COLUMN is_opening_balance INTEGER DEFAULT 0;");
+        } catch (e) { /* Column already exists */ }
+        try {
+          db.execSync("ALTER TABLE loans ADD COLUMN monthly_emi REAL DEFAULT 0;");
+        } catch (e) { /* Column already exists */ }
+        db.execSync("PRAGMA user_version = 18;");
+        console.log("Database migration to version 18 successfully completed!");
+      }
+
       db.execSync("PRAGMA foreign_keys = ON;");
-      console.log(`Database migration/repair successfully completed to version 17!`);
+      console.log(`Database migration/repair successfully completed to version 18!`);
     } else {
-      // Version is already >= 17, ensure foreign keys are enabled
+      // Version is already >= 18, ensure foreign keys are enabled
       db.execSync("PRAGMA foreign_keys = ON;");
     }
 
