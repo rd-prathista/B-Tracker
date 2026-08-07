@@ -14,7 +14,6 @@ export const getAppDataAsJSON = () => {
   const users = db.getAllSync('SELECT * FROM users');
   const investments = db.getAllSync('SELECT * FROM investments');
   const contributions = db.getAllSync('SELECT * FROM investment_contributions');
-  const goals = db.getAllSync('SELECT * FROM goals');
   const reminders = db.getAllSync('SELECT * FROM reminders');
   const loans = db.getAllSync('SELECT * FROM loans');
   const repayments = db.getAllSync('SELECT * FROM loan_repayments');
@@ -23,7 +22,7 @@ export const getAppDataAsJSON = () => {
   return {
     version: '1.5',
     timestamp: new Date().toISOString(),
-    data: { income, expenses, categories, users, investments, contributions, goals, reminders, loans, repayments, app_settings }
+    data: { income, expenses, categories, users, investments, contributions, reminders, loans, repayments, app_settings }
   };
 };
 
@@ -68,7 +67,6 @@ export const importBackupData = async (backupJson) => {
   db.runSync('DELETE FROM categories');
   db.runSync('DELETE FROM investments');
   db.runSync('DELETE FROM investment_contributions');
-  db.runSync('DELETE FROM goals');
   db.runSync('DELETE FROM reminders');
   db.runSync('DELETE FROM loans');
   db.runSync('DELETE FROM loan_repayments');
@@ -105,14 +103,6 @@ export const importBackupData = async (backupJson) => {
     data.contributions.forEach(c => {
       db.runSync('INSERT INTO investment_contributions (id, investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived, funded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
         [c.id, c.investment_id, c.amount, c.currency, c.contribution_date, c.notes, c.attachment_uri || null, c.is_archived || 0, c.funded_by || 'OTHER']);
-    });
-  }
-
-  // Restore Goals
-  if (data.goals) {
-    data.goals.forEach(g => {
-      db.runSync('INSERT INTO goals (title, target_amount, current_amount, currency, target_date) VALUES (?, ?, ?, ?, ?)', 
-        [g.title, g.target_amount, g.current_amount, g.currency, g.target_date]);
     });
   }
 

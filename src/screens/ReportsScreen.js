@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment, getOwnershipBalanceBreakdown } from '../services/transactionService';
+import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment, getOwnershipBalanceBreakdown, getCreditCardSpending } from '../services/transactionService';
 import { getLoans, getLoanSummary } from '../services/loanService';
 import { getActiveCurrencies } from '../database/db';
 
@@ -63,15 +63,26 @@ export default function ReportsScreen({ navigation }) {
   const [pickerMode, setPickerMode] = useState(null); // 'start' or 'end'
 
   const [overviewData, setOverviewData] = useState({ totalIncome: 0, totalExpense: 0, savings: 0, breakdown: [] });
+  const [ownerBalances, setOwnerBalances] = useState({ SELF: 0, SPOUSE: 0, OTHER: 0 });
   const [categoryTrends, setCategoryTrends] = useState({});
   const [savingsTrends, setSavingsTrends] = useState({});
+  const [ccSpending, setCcSpending] = useState({ totalCC: 0, totalDebit: 0, cards: [] });
   const [investmentData, setInvestmentData] = useState({ activeInvestments: [], archivedInvestments: [], totalInvested: 0 });
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [archiveMode, setArchiveMode] = useState('Active');
-  const [expandedId, setExpandedId] = useState(null);
+  
+  const openEditMasterInv = (inv) => {
+    navigation.navigate('AddTransaction', { type: 'investment', mode: 'editSetup', investmentId: inv.id });
+  };
+const [expandedId, setExpandedId] = useState(null);
+  const [expandedCats, setExpandedCats] = useState(false);
+  const [expandedTrends, setExpandedTrends] = useState(false);
+  const [expandedChanges, setExpandedChanges] = useState(false);
+  const [expenseChanges, setExpenseChanges] = useState({ changes: [], isValidMonth: false });
   const [investFilter, setInvestFilter] = useState('Active'); // 'Active', 'Completed', 'Archived'
+  const [expandedCCId, setExpandedCCId] = useState(null);
 
   const [loanSummary, setLoanSummary] = useState({ totalGiven: 0, totalBorrowed: 0, totalRecovered: 0, outstandingGiven: 0, outstandingBorrowed: 0 });
   const [loans, setLoans] = useState([]);
@@ -87,9 +98,81 @@ export default function ReportsScreen({ navigation }) {
       setInvestmentData(getInvestmentAnalytics(currency, ownerFilter));
       setOwnershipBalanceData(getOwnershipBalanceBreakdown(currency));
     } else if (activeTab === 'Expense') {
+      const currentOverview = getReportData(currency, start, end, searchQuery, archiveMode, ownerFilter);
+      setOverviewData(currentOverview);
       setCategoryTrends(getCategoryTrends(currency, archiveMode, ownerFilter));
+      setCcSpending(getCreditCardSpending(currency, start, end, archiveMode, ownerFilter));
+      
+      // Expense Changes Option C Logic
+      let isValidMonth = false;
+      let prevStart, prevEnd;
+
+      if (dateFilter === 'This Month' || dateFilter === 'Last Month') {
+        isValidMonth = true;
+        const startObj = new Date(start);
+        prevStart = new Date(startObj.getFullYear(), startObj.getMonth() - 1, 1).toISOString();
+        prevEnd = new Date(startObj.getFullYear(), startObj.getMonth(), 0, 23, 59, 59).toISOString();
+      } else if (dateFilter === 'Custom') {
+        const startObj = new Date(start);
+        const endObj = new Date(end);
+        
+        if (startObj.getDate() === 1) {
+          const expectedEndObj = new Date(startObj.getFullYear(), startObj.getMonth() + 1, 0);
+          if (endObj.getFullYear() === expectedEndObj.getFullYear() && 
+              endObj.getMonth() === expectedEndObj.getMonth() && 
+              endObj.getDate() === expectedEndObj.getDate()) {
+            isValidMonth = true;
+            prevStart = new Date(startObj.getFullYear(), startObj.getMonth() - 1, 1).toISOString();
+            prevEnd = new Date(startObj.getFullYear(), startObj.getMonth(), 0, 23, 59, 59).toISOString();
+          }
+        }
+      }
+      
+      if (isValidMonth) {
+        const prevOverview = getReportData(currency, prevStart, prevEnd, searchQuery, archiveMode, ownerFilter);
+        const currentBreakdown = currentOverview.breakdown || [];
+        const prevBreakdown = prevOverview.breakdown || [];
+        
+        const catMap = {};
+        currentBreakdown.forEach(item => {
+          catMap[item.category] = { current: item.total, prev: 0, icon: item.icon };
+        });
+        prevBreakdown.forEach(item => {
+          if (catMap[item.category]) {
+            catMap[item.category].prev = item.total;
+          } else {
+            catMap[item.category] = { current: 0, prev: item.total, icon: item.icon };
+          }
+        });
+        
+        const changes = [];
+        Object.keys(catMap).forEach(cat => {
+          const diff = catMap[cat].current - catMap[cat].prev;
+          if (diff !== 0) {
+            changes.push({ 
+              category: cat, 
+              diff: diff, 
+              prev: catMap[cat].prev,
+              current: catMap[cat].current,
+              icon: catMap[cat].icon 
+            });
+          }
+        });
+        
+        changes.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+        
+        let compareLabel = 'Previous Month';
+        if (dateFilter === 'This Month') compareLabel = 'Last Month';
+        else if (dateFilter === 'Last Month') compareLabel = 'Month Before Last';
+        
+        setExpenseChanges({ changes, isValidMonth: true, compareLabel });
+      } else {
+        setExpenseChanges({ changes: [], isValidMonth: false, compareLabel: '' });
+      }
     } else if (activeTab === 'Savings') {
-      setSavingsTrends(getSavingsTrends(archiveMode, ownerFilter));
+      setSavingsTrends(getCashflowTrends(currency, ownerFilter));
+      setCategoryTrends(getCategoryTrends(currency, archiveMode, ownerFilter));
+      setOwnerBalances(getOwnerBalances()[currency] || { SELF: 0, SPOUSE: 0, OTHER: 0 });
     } else if (activeTab === 'Invest') {
       setInvestmentData(getInvestmentAnalytics(currency, ownerFilter));
     } else if (activeTab === 'Loan') {
@@ -140,7 +223,7 @@ export default function ReportsScreen({ navigation }) {
     return (
       <View style={styles.currencyToggle}>
         {active.map((cur) => (
-          <TouchableOpacity key={cur} style={[styles.curBtn, currency === cur && { backgroundColor: cur === 'AED' ? colors.primary : colors.accentTeal }]} onPress={() => setCurrency(cur)}>
+<TouchableOpacity key={cur} style={[styles.curBtn, currency === cur && { backgroundColor: cur === 'AED' ? colors.primary : colors.accentTeal }]} onPress={() => setCurrency(cur)}>
             <Text style={[styles.curText, currency === cur && styles.curTextActive]}>{cur}</Text>
           </TouchableOpacity>
         ))}
@@ -216,6 +299,7 @@ export default function ReportsScreen({ navigation }) {
       </View>
     );
   };
+
 
   const toggleOwnerExpand = (ownerKey) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -301,9 +385,9 @@ export default function ReportsScreen({ navigation }) {
 
   const renderCombinedOwnershipOverview = () => {
     const items = [
-      { label: 'Prathista', income: overviewData.incomeBySource?.SELF || 0, expense: overviewData.expenseByFunding?.SELF || 0 },
-      { label: 'Praveen', income: overviewData.incomeBySource?.SPOUSE || 0, expense: overviewData.expenseByFunding?.SPOUSE || 0 },
-      { label: 'Other', income: overviewData.incomeBySource?.OTHER || 0, expense: overviewData.expenseByFunding?.OTHER || 0 }
+      { label: 'Prathista', income: ownershipBalanceData.prathista.income, expense: ownershipBalanceData.prathista.expense },
+      { label: 'Praveen', income: ownershipBalanceData.praveen.income, expense: ownershipBalanceData.praveen.expense },
+      { label: 'Other', income: ownershipBalanceData.other.income, expense: ownershipBalanceData.other.expense }
     ];
 
     return (
@@ -379,10 +463,24 @@ export default function ReportsScreen({ navigation }) {
               <View style={[styles.usIconWrap, { backgroundColor: accentColor + '20' }]}>
                 <Ionicons name="wallet-outline" size={14} color={accentColor} />
               </View>
-              <Text style={styles.usLabel}>NET SAVINGS</Text>
+              <Text style={styles.usLabel}>AVAILABLE SAVINGS</Text>
             </View>
             <Text style={[styles.usVal, { color: overviewData.savings >= 0 ? colors.text : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
               {overviewData.savings < 0 ? '-' : ''}{fmt(Math.abs(overviewData.savings))}
+            </Text>
+          </View>
+          
+          <View style={styles.usDivider} />
+          
+          <View style={styles.usRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={[styles.usIconWrap, { backgroundColor: (overviewData.savings >= 0 ? colors.success : colors.danger) + '20' }]}>
+                <Ionicons name="pie-chart-outline" size={14} color={overviewData.savings >= 0 ? colors.success : colors.danger} />
+              </View>
+              <Text style={styles.usLabel}>SAVINGS %</Text>
+            </View>
+            <Text style={[styles.usVal, { color: overviewData.savings >= 0 ? colors.success : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
+              {overviewData.totalIncome > 0 ? ((overviewData.savings / overviewData.totalIncome) * 100).toFixed(1) + '%' : '--'}
             </Text>
           </View>
         </GlassCard>
@@ -463,10 +561,238 @@ export default function ReportsScreen({ navigation }) {
     return (
       <FadeInView delay={0}>
         <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
-        {months.length === 0 ? (
-          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No trend data available</Text></View>
+        
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, gap: 8, paddingBottom: 16 }}>
+          {FILTERS.map((f) => (
+            <TouchableOpacity key={f} style={[styles.dateFilterBtn, dateFilter === f && { borderColor: accentColor, backgroundColor: accentColor + '15' }]} onPress={() => handleFilterSelect(f)}>
+              <Text style={[styles.dateFilterText, dateFilter === f && { color: accentColor }]}>
+                {f === 'Custom' && dateFilter === 'Custom' ? `${formatDate(customStart)} - ${formatDate(customEnd)}` : f}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>
+          <GlassCard style={{ borderRadius: 12 }} contentStyle={{ paddingVertical: 12, paddingHorizontal: 16 }}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textSecondary }}>{dateFilter === 'Custom' ? 'Custom Period' : dateFilter} Total Expense</Text>
+            <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 20, color: colors.danger, marginTop: 4 }}>{currency} {fmt(overviewData.totalExpense)}</Text>
+          </GlassCard>
+        </View>
+
+        <Text style={[typography.sectionLabel, { marginBottom: 14, marginTop: 10, paddingHorizontal: 18 }]}>SPENDING BREAKDOWN</Text>
+        {overviewData.breakdown.length === 0 ? (
+          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No expenses in this period</Text></View>
         ) : (
-          renderTrendsTable()
+          <View style={{ paddingHorizontal: 18 }}>
+            <GlassCard style={styles.breakdownCard} contentStyle={styles.breakdownCardContent}>
+              {overviewData.breakdown.slice(0, 5).map((item) => (
+                <View key={item.category} style={styles.breakdownRow}>
+                  <View style={styles.bRowTop}>
+                    <View style={styles.bIconWrap}><Ionicons name={item.icon || 'ellipse-outline'} size={14} color={colors.text} /></View>
+                    <Text style={styles.bCategory}>{item.category}</Text>
+                    <Text style={styles.bAmount} numberOfLines={1} adjustsFontSizeToFit>{fmt(item.total)}</Text>
+                  </View>
+                  <View style={styles.bBarTrack}>
+                    <View style={[styles.bBarFill, { width: `${item.percentage}%`, backgroundColor: colors.dangerLight }]} />
+                  </View>
+                </View>
+              ))}
+            </GlassCard>
+          </View>
+        )}
+
+        <View style={{ paddingHorizontal: 18, marginBottom: 14, marginTop: 10 }}>
+          <Text style={typography.sectionLabel}>
+            {expenseChanges.isValidMonth ? `COMPARED WITH ${expenseChanges.compareLabel.toUpperCase()}` : 'EXPENSE CHANGES'}
+          </Text>
+        </View>
+        {!expenseChanges.isValidMonth ? (
+          <View style={[styles.emptyWrap, { paddingHorizontal: 32 }]}>
+            <Text style={[typography.bodySmall, { textAlign: 'center', lineHeight: 20 }]}>Expense Changes are available only for single-month views. Please select a monthly filter to compare category changes.</Text>
+          </View>
+        ) : expenseChanges.changes.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={typography.bodySmall}>No category changes compared to the previous month.</Text>
+          </View>
+        ) : (
+          <View style={{ paddingHorizontal: 18 }}>
+            <GlassCard style={styles.breakdownCard} contentStyle={styles.breakdownCardContent}>
+              {(expandedChanges ? expenseChanges.changes : expenseChanges.changes.slice(0, 5)).map((item, index) => {
+                const isIncrease = item.diff > 0;
+                return (
+                  <View key={item.category} style={[styles.breakdownRow, index > 0 && { marginTop: 16 }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flex: 1 }}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isIncrease ? colors.danger : colors.success }} />
+                          <Text style={[styles.bCategory, { color: isIncrease ? colors.danger : colors.success }]} numberOfLines={1}>{item.category}</Text>
+                        </View>
+                        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: colors.textSecondary }}>
+                          {currency} {fmt(item.prev)}  →  {currency} {fmt(item.current)}
+                        </Text>
+                      </View>
+                      
+                      <View style={{ alignItems: 'flex-end', justifyContent: 'center', paddingLeft: 10, flexShrink: 0 }}>
+                        <Text style={[styles.bAmount, { color: isIncrease ? colors.danger : colors.success }]}>
+                          {isIncrease ? '+' : '-'}{currency} {fmt(Math.abs(item.diff))}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+              {expenseChanges.changes.length > 5 && (
+                <TouchableOpacity 
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setExpandedChanges(!expandedChanges);
+                  }}
+                  style={{ marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', alignItems: 'center' }}
+                >
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.primary }}>
+                    {expandedChanges ? 'View Less' : 'View Full Comparison'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </GlassCard>
+          </View>
+        )}
+
+        {/* Payment Analysis Card */}
+        {ccSpending && (ccSpending.totalCC > 0 || ccSpending.totalDebit > 0) && (
+          <View style={{ paddingHorizontal: 18, marginTop: 14 }}>
+            <GlassCard style={{ borderRadius: 12 }} noPadding>
+              <TouchableOpacity
+                onPress={() => toggleExpand('payment_analysis')}
+                style={{ paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.textSecondary }}>Payment Analysis</Text>
+                <Ionicons name={expandedId === 'payment_analysis' ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+              
+              {expandedId === 'payment_analysis' && (
+                <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' }}>
+                  
+                  {/* Totals */}
+                  <View style={{ marginTop: 8, marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Total Card Payments</Text>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text }}>{currency} {fmt(ccSpending.totalDebit + ccSpending.totalCC)}</Text>
+                    </View>
+                    
+                    {(() => {
+                      const total = (ccSpending.totalDebit + ccSpending.totalCC) || 1;
+                      const debitPct = Math.round((ccSpending.totalDebit / total) * 100) || 0;
+                      const ccPct = Math.round((ccSpending.totalCC / total) * 100) || 0;
+                      return (
+                        <>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Debit Card</Text>
+                            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text }}>{currency} {fmt(ccSpending.totalDebit)} ({debitPct}%)</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Credit Card</Text>
+                            <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.text }}>{currency} {fmt(ccSpending.totalCC)} ({ccPct}%)</Text>
+                          </View>
+                        </>
+                      );
+                    })()}
+                  </View>
+
+                  {/* Credit Card Breakdown */}
+                  {ccSpending.cards.length > 0 && (
+                    <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', paddingTop: 8 }}>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>Credit Card Spending</Text>
+                      {ccSpending.cards.map((cc, idx) => {
+                        const isExpanded = expandedCCId === cc.credit_card_id;
+                        const top2 = cc.categories.slice(0, 2).map(c => c.category).join(' • ');
+                        
+                        return (
+                          <View 
+                            key={cc.credit_card_id} 
+                            style={{ 
+                              marginBottom: idx === ccSpending.cards.length - 1 ? 0 : 8,
+                              backgroundColor: 'rgba(255,255,255,0.02)',
+                              borderRadius: 12,
+                              padding: 10,
+                              borderWidth: 1,
+                              borderColor: isExpanded ? colors.primary + '50' : 'transparent'
+                            }}
+                          >
+                            {!isExpanded ? (
+                              <View>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: colors.text }}>{cc.name}</Text>
+                                  <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>{currency} {fmt(cc.total)}</Text>
+                                </View>
+                                {top2 ? <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 11, color: colors.textMuted, marginTop: 4 }}>{top2}</Text> : null}
+                                <TouchableOpacity 
+                                  style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}
+                                  onPress={() => {
+                                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                    setExpandedCCId(cc.credit_card_id);
+                                  }}
+                                >
+                                  <Ionicons name="chevron-down" size={14} color={colors.primary} />
+                                  <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 11, color: colors.primary, marginLeft: 4 }}>View Details</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <View>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: colors.text }}>{cc.name}</Text>
+                                  <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 13, color: colors.text }}>Total: {currency} {fmt(cc.total)}</Text>
+                                </View>
+                                <View style={{ paddingLeft: 8, borderLeftWidth: 1, borderLeftColor: colors.primary + '30', marginBottom: 8 }}>
+                                  {cc.categories.slice(0, 5).map(c => (
+                                    <View key={c.category} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                      <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 12, color: colors.textSecondary }}>{c.category}</Text>
+                                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.text }}>{fmt(c.total)}</Text>
+                                    </View>
+                                  ))}
+                                </View>
+                                <TouchableOpacity 
+                                  style={{ flexDirection: 'row', alignItems: 'center' }}
+                                  onPress={() => {
+                                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                                    setExpandedCCId(null);
+                                  }}
+                                >
+                                  <Ionicons name="chevron-up" size={14} color={colors.textMuted} />
+                                  <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 11, color: colors.textMuted, marginLeft: 4 }}>Hide Details</Text>
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
+            </GlassCard>
+          </View>
+        )}
+
+        <View style={{ marginBottom: 14 }} />
+
+        <TouchableOpacity 
+          onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setExpandedTrends(!expandedTrends);
+          }} 
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.03)', marginHorizontal: 18, borderRadius: 12, marginBottom: 14, borderWidth: 1, borderColor: colors.border }}
+        >
+          <Text style={{ fontFamily: 'Inter_600SemiBold', color: colors.text, fontSize: 13 }}>Category Trend Comparison</Text>
+          <Ionicons name={expandedTrends ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        {expandedTrends && (
+          months.length === 0 ? (
+            <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No trend data available</Text></View>
+          ) : (
+            renderTrendsTable()
+          )
         )}
       </FadeInView>
     );
@@ -476,39 +802,139 @@ export default function ReportsScreen({ navigation }) {
     const months = Object.keys(savingsTrends).sort().reverse();
     if (months.length === 0) return <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No savings data available</Text></View>;
 
-    const active = getActiveCurrencies();
-    const showAED = active.includes('AED');
-    const showINR = active.includes('INR');
+    const allTimeSavings = ownerFilter === 'ALL' || !ownerFilter 
+      ? (ownerBalances.SELF || 0) + (ownerBalances.SPOUSE || 0) + (ownerBalances.OTHER || 0)
+      : (ownerBalances[ownerFilter] || 0);
 
     return (
       <FadeInView delay={0}>
-        <View style={{ paddingHorizontal: 18, paddingBottom: 20 }}>
-          <GlassCard style={styles.tableCard} contentStyle={styles.tableCardContent}>
-            <View style={[styles.tr, styles.trHeader]}>
-              <Text style={[styles.th, { flex: 1.2, textAlign: 'left' }]}>Month</Text>
-              {showAED && <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>AED</Text>}
-              {showINR && <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>INR</Text>}
-            </View>
-            {months.map(m => {
-              const data = savingsTrends[m];
-              return (
-                <View key={m} style={styles.tr}>
-                  <Text style={[styles.tdText, { flex: 1.2, textAlign: 'left', fontFamily: 'Inter_700Bold', color: colors.textSecondary }]}>{monthName(m)}</Text>
-                  {showAED && (
-                    <Text style={[styles.tdText, { flex: 1, color: (data.AED?.savings || 0) >= 0 ? colors.success : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {(data.AED?.savings || 0) > 0 ? '+' : ''}{fmt(data.AED?.savings || 0)}
-                    </Text>
-                  )}
-                  {showINR && (
-                    <Text style={[styles.tdText, { flex: 1, color: (data.INR?.savings || 0) >= 0 ? colors.accentTeal : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {(data.INR?.savings || 0) > 0 ? '+' : ''}{fmt(data.INR?.savings || 0)}
-                    </Text>
-                  )}
-                </View>
-              );
-            })}
+        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
+        
+        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>
+          <GlassCard style={{ borderRadius: 12 }} contentStyle={{ paddingVertical: 12, paddingHorizontal: 16 }}>
+            <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textSecondary }}>All Time Available Savings</Text>
+            <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 20, color: allTimeSavings >= 0 ? colors.success : colors.danger, marginTop: 4 }}>
+              {allTimeSavings < 0 ? '-' : ''}{currency} {fmt(Math.abs(allTimeSavings))}
+            </Text>
           </GlassCard>
         </View>
+
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 20 }}>
+          {months.map((m, index) => {
+            const data = savingsTrends[m] || { savings: 0, income: 0, expense: 0 };
+            const prevM = months[index + 1];
+            const prevData = prevM ? (savingsTrends[prevM] || { savings: 0, income: 0, expense: 0 }) : null;
+
+            const savingsPct = data.income > 0 ? ((data.savings / data.income) * 100).toFixed(1) + '%' : '--';
+            const savingsDiff = prevData ? data.savings - prevData.savings : null;
+
+            // Calculate category differences
+            const catDiffs = [];
+            if (prevM) {
+              const currCats = categoryTrends[m] || [];
+              const prevCats = categoryTrends[prevM] || [];
+              const catMap = {};
+              currCats.forEach(c => catMap[c.category] = { ...c, prevTotal: 0 });
+              prevCats.forEach(c => {
+                if (!catMap[c.category]) catMap[c.category] = { category: c.category, icon: c.icon, total: 0, prevTotal: c.total };
+                else catMap[c.category].prevTotal = c.total;
+              });
+
+              Object.values(catMap).forEach(c => {
+                const diff = c.total - c.prevTotal;
+                if (diff !== 0) catDiffs.push({ category: c.category, icon: c.icon, diff });
+              });
+              catDiffs.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+            }
+
+            const top5 = catDiffs.slice(0, 5);
+            const isCatsExpanded = expandedId === m + '_cats';
+
+            return (
+              <GlassCard key={m} style={{ marginBottom: 12, borderRadius: 16 }} contentStyle={{ padding: 14 }}>
+                <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 16, color: colors.text, marginBottom: 10 }}>{monthName(m)}</Text>
+                
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Income</Text>
+                    <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: colors.success }}>{fmt(data.income)}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Expense</Text>
+                    <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: colors.danger }}>{fmt(data.expense)}</Text>
+                  </View>
+                  <View style={{ flex: 1.2, alignItems: 'flex-end' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted }}>Available Savings</Text>
+                      <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: data.savings >= 0 ? colors.success + '20' : colors.danger + '20' }}>
+                        <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 10, color: data.savings >= 0 ? colors.success : colors.danger }}>{savingsPct}</Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontFamily: 'Inter_700Bold', fontSize: 14, color: data.savings >= 0 ? colors.text : colors.danger }}>
+                      {data.savings < 0 ? '-' : ''}{fmt(Math.abs(data.savings))}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }}>
+                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>Compared with Previous Month</Text>
+                  {!prevData ? (
+                    <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.textMuted }}>No previous month available.</Text>
+                  ) : (
+                    <>
+                      <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 14, color: savingsDiff >= 0 ? colors.success : colors.danger, marginBottom: 12 }}>
+                        {savingsDiff > 0 ? '+' : '-'}{currency} {fmt(Math.abs(savingsDiff))} vs {monthName(prevM).split(' ')[0]}
+                      </Text>
+                      
+                      {top5.length > 0 && (
+                        <View>
+                          <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>Major Reasons (Top Changes)</Text>
+                          {top5.map(c => (
+                            <View key={c.category} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Ionicons name={c.icon || 'ellipse-outline'} size={14} color={colors.textSecondary} />
+                                <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: colors.text }}>{c.category}</Text>
+                              </View>
+                              <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: c.diff > 0 ? colors.danger : colors.success }}>
+                                {c.diff > 0 ? '+' : '-'}{currency} {fmt(Math.abs(c.diff))}
+                              </Text>
+                            </View>
+                          ))}
+
+                          {catDiffs.length > 5 && (
+                            <View>
+                              <TouchableOpacity onPress={() => toggleExpand(m + '_cats')} style={{ paddingVertical: 8, marginTop: 4 }}>
+                                <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: accentColor }}>
+                                  {isCatsExpanded ? 'Hide Full Comparison' : 'View Full Category Comparison'}
+                                </Text>
+                              </TouchableOpacity>
+                              
+                              {isCatsExpanded && (
+                                <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: colors.border + '15' }}>
+                                  {catDiffs.slice(5).map(c => (
+                                    <View key={c.category} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <Ionicons name={c.icon || 'ellipse-outline'} size={14} color={colors.textSecondary} />
+                                        <Text style={{ fontFamily: 'Inter_400Regular', fontSize: 13, color: colors.text }}>{c.category}</Text>
+                                      </View>
+                                      <Text style={{ fontFamily: 'Inter_500Medium', fontSize: 13, color: c.diff > 0 ? colors.danger : colors.success }}>
+                                        {c.diff > 0 ? '+' : '-'}{currency} {fmt(Math.abs(c.diff))}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </>
+                  )}
+                </View>
+              </GlassCard>
+            );
+          })}
+        </ScrollView>
       </FadeInView>
     );
   };
@@ -719,6 +1145,25 @@ export default function ReportsScreen({ navigation }) {
                         >
                           <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                           <Text style={{ ...typography.bodySmall, color: colors.textSecondary, fontFamily: 'Inter_700Bold' }}>History</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                          onPress={() => openEditMasterInv(inv)}
+                          style={{ 
+                            flex: 1, 
+                            flexDirection: 'row', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            gap: 6, 
+                            backgroundColor: colors.cardSolid, 
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            paddingVertical: 8, 
+                            borderRadius: 8 
+                          }}
+                        >
+                          <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+                          <Text style={{ ...typography.bodySmall, color: colors.primary, fontFamily: 'Inter_700Bold' }}>Edit</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity 
@@ -1074,6 +1519,8 @@ export default function ReportsScreen({ navigation }) {
             </GlassCard>
           </View>
         </Modal>
+
+
 
       </SafeAreaView>
     </AmbientBackground>

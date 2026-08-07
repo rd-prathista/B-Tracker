@@ -95,16 +95,6 @@ export const initDatabase = () => {
         FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
       );
 
-      CREATE TABLE IF NOT EXISTS goals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        target_amount REAL NOT NULL,
-        current_amount REAL DEFAULT 0,
-        currency TEXT NOT NULL,
-        target_date TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
       CREATE TABLE IF NOT EXISTS reminders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
@@ -370,10 +360,31 @@ export const initDatabase = () => {
         console.log("Database migration to version 8 successfully completed!");
       }
 
+      if (currentVersion < 17) {
+        try {
+          db.execSync(`
+            CREATE TABLE IF NOT EXISTS credit_cards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              last_4 TEXT NOT NULL,
+              bank_name TEXT NOT NULL,
+              credit_limit REAL NOT NULL,
+              color TEXT NOT NULL,
+              status TEXT DEFAULT 'Active',
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+          `);
+          db.execSync("ALTER TABLE expenses ADD COLUMN payment_source TEXT DEFAULT 'Debit Card';");
+          db.execSync("ALTER TABLE expenses ADD COLUMN credit_card_id INTEGER;");
+        } catch (e) { /* Columns/Tables already exist */ }
+        db.execSync("PRAGMA user_version = 17;");
+        console.log("Database migration to version 17 successfully completed!");
+      }
+
       db.execSync("PRAGMA foreign_keys = ON;");
-      console.log(`Database migration/repair successfully completed to version 8!`);
+      console.log(`Database migration/repair successfully completed to version 17!`);
     } else {
-      // Version is already >= 8, ensure foreign keys are enabled
+      // Version is already >= 17, ensure foreign keys are enabled
       db.execSync("PRAGMA foreign_keys = ON;");
     }
 
@@ -562,25 +573,3 @@ export const deactivateCurrency = (currency) => {
   }
 };
 
-export const getGoals = () => {
-  const db = getDb();
-  return db.getAllSync('SELECT * FROM goals ORDER BY created_at DESC');
-};
-
-export const addGoal = (title, target, currency, targetDate) => {
-  const db = getDb();
-  db.runSync(
-    'INSERT INTO goals (title, target_amount, currency, target_date) VALUES (?, ?, ?, ?)',
-    [title, parseFloat(target), currency, targetDate]
-  );
-};
-
-export const updateGoalProgress = (id, current) => {
-  const db = getDb();
-  db.runSync('UPDATE goals SET current_amount = ? WHERE id = ?', [parseFloat(current), id]);
-};
-
-export const deleteGoal = (id) => {
-  const db = getDb();
-  db.runSync('DELETE FROM goals WHERE id = ?', [id]);
-};

@@ -30,6 +30,7 @@ import AmbientBackground from '../components/AmbientBackground';
 import GlassCard from '../components/GlassCard';
 import Toast from '../components/Toast';
 import { fmt } from '../utils/formatters';
+import { getCreditCards } from '../services/transactionService';
 
 export default function LoanDetailsScreen({ navigation, route }) {
   const { loanId } = route.params || {};
@@ -45,6 +46,10 @@ export default function LoanDetailsScreen({ navigation, route }) {
   const [repayNotes, setRepayNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSavingRepay, setIsSavingRepay] = useState(false);
+  
+  const [paymentSource, setPaymentSource] = useState('Debit Card');
+  const [creditCardId, setCreditCardId] = useState(null);
+  const [activeCreditCards, setActiveCreditCards] = useState([]);
 
   // Toast
   const [toastVisible, setToastVisible] = useState(false);
@@ -70,6 +75,7 @@ export default function LoanDetailsScreen({ navigation, route }) {
   useFocusEffect(
     useCallback(() => {
       loadLoanData();
+      setActiveCreditCards(getCreditCards(true));
     }, [loanId])
   );
 
@@ -95,7 +101,9 @@ export default function LoanDetailsScreen({ navigation, route }) {
         loanId,
         parseFloat(repayAmount),
         repayDate.toISOString(),
-        repayNotes.trim() || null
+        repayNotes.trim() || null,
+        paymentSource,
+        paymentSource === 'Credit Card' ? creditCardId : null
       );
       
       setShowRepaymentModal(false);
@@ -455,6 +463,60 @@ export default function LoanDetailsScreen({ navigation, route }) {
                       if (selected) setRepayDate(selected);
                     }}
                   />
+                )}
+
+                {loan && loan.type === 'I Borrowed' && (
+                  <View style={{ marginBottom: 14 }}>
+                    <Text style={styles.modalInputLabel}>PAYMENT SOURCE</Text>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+                      {['Debit Card', 'Credit Card'].map((ps) => {
+                        const isSelected = paymentSource === ps;
+                        return (
+                          <TouchableOpacity
+                            key={ps}
+                            style={[
+                              { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
+                              isSelected && { backgroundColor: colors.accentIndigo, borderColor: colors.accentIndigo }
+                            ]}
+                            onPress={() => {
+                              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                              setPaymentSource(ps);
+                              if (ps === 'Credit Card' && activeCreditCards.length > 0 && !creditCardId) {
+                                setCreditCardId(activeCreditCards[0].id);
+                              }
+                            }}
+                          >
+                            <Text style={[{ fontFamily: 'Inter_600SemiBold', fontSize: 12, color: colors.textSecondary }, isSelected && { color: '#fff' }]}>
+                              {ps}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    {paymentSource === 'Credit Card' && activeCreditCards.length > 0 && (
+                      <View style={{ marginTop: 10 }}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                          {activeCreditCards.map((cc) => (
+                            <TouchableOpacity
+                              key={cc.id}
+                              style={[
+                                { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)' },
+                                creditCardId === cc.id && { borderColor: colors.accentIndigo, backgroundColor: colors.accentIndigo + '20' }
+                              ]}
+                              onPress={() => setCreditCardId(cc.id)}
+                            >
+                              <Text style={[{ fontSize: 12, color: colors.textSecondary }, creditCardId === cc.id && { color: colors.accentIndigo, fontFamily: 'Inter_600SemiBold' }]}>
+                                {cc.name}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
+                    {paymentSource === 'Credit Card' && activeCreditCards.length === 0 && (
+                      <Text style={{ fontSize: 11, color: colors.warning, marginTop: 8 }}>No active credit cards found. Add one in Settings.</Text>
+                    )}
+                  </View>
                 )}
 
                 <Text style={styles.modalInputLabel}>NOTES (OPTIONAL)</Text>
