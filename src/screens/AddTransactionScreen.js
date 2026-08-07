@@ -152,17 +152,6 @@ export default function AddTransactionScreen({ navigation, route }) {
         setDate(new Date(master.start_date || new Date()));
         setNotes(master.notes || '');
 
-        // OB_DISABLED: Opening Balance check removed. Always use recurring_amount.
-        /*
-        const opBal = getDb().getFirstSync(`SELECT amount FROM investment_contributions WHERE investment_id = ? AND is_opening_balance = 1`, [preSelectedInvestmentId]);
-        if (opBal) {
-          setIsOpeningBalance(true);
-          setAmount(String(opBal.amount || ''));
-        } else {
-          setIsOpeningBalance(false);
-          setAmount(String(master.recurring_amount || ''));
-        }
-        */
         setAmount(String(master.recurring_amount || ''));
       }
       return;
@@ -363,7 +352,7 @@ export default function AddTransactionScreen({ navigation, route }) {
           updateMasterInvestment(preSelectedInvestmentId, {
             name: invName,
             type: category,
-            recurringAmount: amount ? parseFloat(amount) : 0, // OB_DISABLED: was: isOpeningBalance ? 0 : (amount ? parseFloat(amount) : 0)
+            recurringAmount: amount ? parseFloat(amount) : 0,
             startDate: isoDate,
             tenureValue: parseInt(tenureValue),
             tenureType: tenureType,
@@ -462,8 +451,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 />
-                {/* OB_DISABLED notes: label was isOpeningBalance ? 'OPENING BALANCE' : 'RECURRING AMOUNT'
-                    style opacity was (isOpeningBalance || isSaving); autoFocus was !isEdit && !isOpeningBalance; editable was !isSaving && !isOpeningBalance */}
+
                 <Text style={styles.fieldLabel}>
                   {isInvestment && (mode === 'setup' || mode === 'editSetup') 
                     ? (isExistingRecord ? 'MONTHLY AMOUNT' : 'RECURRING AMOUNT') 

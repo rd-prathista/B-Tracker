@@ -18,7 +18,7 @@ import CategoryManagementScreen from '../screens/CategoryManagementScreen';
 import CreditCardManagementScreen from '../screens/CreditCardManagementScreen';
 import AddLoanScreen from '../screens/AddLoanScreen';
 import LoanDetailsScreen from '../screens/LoanDetailsScreen';
-// OB_DISABLED: import OpeningBalanceWizardScreen from '../screens/OpeningBalanceWizardScreen';
+
 
 const Stack = createNativeStackNavigator();
 
@@ -92,13 +92,6 @@ export default function AppNavigator() {
             <Stack.Screen name="CreditCardManagement" component={CreditCardManagementScreen} />
             <Stack.Screen name="AddLoan" component={AddLoanScreen} />
             <Stack.Screen name="LoanDetails" component={LoanDetailsScreen} />
-            {/* OB_DISABLED:
-            <Stack.Screen 
-              name="OpeningBalanceWizard" 
-              component={OpeningBalanceWizardScreen} 
-              options={{ presentation: 'fullScreenModal' }}
-            />
-            */}
           </>
         )}
       </Stack.Navigator>

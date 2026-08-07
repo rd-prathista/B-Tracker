@@ -436,11 +436,8 @@ export default function SettingsScreen({ navigation, route }) {
               <SettingItem icon="list-outline" label="Manage Categories" onPress={() => navigation.navigate('CategoryManagement')} />
               <View style={styles.divider} />
               <SettingItem icon="card-outline" label="Manage Credit Cards" onPress={() => navigation.navigate('CreditCardManagement')} />
-              {/* OB_DISABLED:
-              <View style={styles.divider} />
-              <SettingItem icon="wallet-outline" label="Opening Balance Wizard" color={colors.accentOrange} onPress={() => navigation.navigate('OpeningBalanceWizard')} />
-              */}
               
+
               {biometricsAvailable && (
                 <>
                   <View style={styles.divider} />

@@ -94,16 +94,6 @@ export const initDatabase = () => {
         FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
       );
 
-      CREATE TABLE IF NOT EXISTS goals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        target_amount REAL NOT NULL,
-        current_amount REAL DEFAULT 0,
-        currency TEXT NOT NULL,
-        target_date TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
       CREATE TABLE IF NOT EXISTS reminders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
@@ -573,25 +563,3 @@ export const deactivateCurrency = (currency) => {
   }
 };
 
-export const getGoals = () => {
-  const db = getDb();
-  return db.getAllSync('SELECT * FROM goals ORDER BY created_at DESC');
-};
-
-export const addGoal = (title, target, currency, targetDate) => {
-  const db = getDb();
-  db.runSync(
-    'INSERT INTO goals (title, target_amount, currency, target_date) VALUES (?, ?, ?, ?)',
-    [title, parseFloat(target), currency, targetDate]
-  );
-};
-
-export const updateGoalProgress = (id, current) => {
-  const db = getDb();
-  db.runSync('UPDATE goals SET current_amount = ? WHERE id = ?', [parseFloat(current), id]);
-};
-
-export const deleteGoal = (id) => {
-  const db = getDb();
-  db.runSync('DELETE FROM goals WHERE id = ?', [id]);
-};
