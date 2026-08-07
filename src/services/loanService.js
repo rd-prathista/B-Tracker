@@ -46,11 +46,11 @@ export const updateLoanStatusAndOutstanding = (db, loanId) => {
  */
 export const addLoan = (data) => {
   const db = getDb();
-  const { personName, type, sourceType, amount, currency, startDate, expectedReturnDate, notes, fundedBy } = data;
+  const { personName, type, sourceType, amount, currency, startDate, expectedReturnDate, notes, fundedBy, isExisting, monthlyEmi } = data;
 
   const result = db.runSync(
-    `INSERT INTO loans (person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived, funded_by) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0, ?)`,
+    `INSERT INTO loans (person_name, type, source_type, amount, currency, start_date, expected_return_date, notes, status, is_archived, funded_by, is_opening_balance, monthly_emi) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0, ?, ?, ?)`,
     [
       personName,
       type, // 'I Gave' or 'I Borrowed'
@@ -60,7 +60,9 @@ export const addLoan = (data) => {
       startDate,
       expectedReturnDate || null,
       notes || null,
-      fundedBy || 'OTHER'
+      fundedBy || 'OTHER',
+      isExisting ? 1 : 0,
+      monthlyEmi ? parseFloat(monthlyEmi) : 0
     ]
   );
 
@@ -86,6 +88,7 @@ export const updateLoan = (id, data) => {
   if (data.expectedReturnDate !== undefined) { sets.push('expected_return_date = ?'); params.push(data.expectedReturnDate || null); }
   if (data.notes !== undefined) { sets.push('notes = ?'); params.push(data.notes || null); }
   if (data.fundedBy !== undefined) { sets.push('funded_by = ?'); params.push(data.fundedBy || 'OTHER'); }
+  if (data.monthlyEmi !== undefined) { sets.push('monthly_emi = ?'); params.push(parseFloat(data.monthlyEmi) || 0); }
 
   if (sets.length > 0) {
     params.push(id);
@@ -215,11 +218,11 @@ export const getLoanById = (id) => {
 /**
  * Add a repayment to a loan
  */
-export const addRepayment = (loanId, amount, date, notes) => {
+export const addRepayment = (loanId, amount, date, notes, paymentSource = 'Debit Card', creditCardId = null) => {
   const db = getDb();
   db.runSync(
-    'INSERT INTO loan_repayments (loan_id, amount, date, notes) VALUES (?, ?, ?, ?)',
-    [loanId, parseFloat(amount), date, notes || null]
+    'INSERT INTO loan_repayments (loan_id, amount, date, notes, payment_source, credit_card_id) VALUES (?, ?, ?, ?, ?, ?)',
+    [loanId, parseFloat(amount), date, notes || null, paymentSource, creditCardId]
   );
   return updateLoanStatusAndOutstanding(db, loanId);
 };
@@ -415,9 +418,12 @@ export const convertTransactionToLoanActivity = (data) => {
  */
 export const getLoanTransactionsForHistory = (filters = {}) => {
   const db = getDb();
-  const { startDate, endDate, currency, search, loanId } = filters;
+  const { startDate, endDate, currency, search, loanId, paymentSource, fundedBy } = filters;
 
-  let loanQuery = 'SELECT * FROM loans WHERE 1=1';
+  // Build loan-creation query
+  // Note: loan rows (creation events) don't have a payment_source column.
+  // If paymentSource filter is active, skip loan creation rows entirely.
+  let loanQuery = 'SELECT * FROM loans WHERE is_opening_balance = 0';
   const loanParams = [];
 
   if (loanId) {
@@ -444,8 +450,18 @@ export const getLoanTransactionsForHistory = (filters = {}) => {
     loanQuery += ' AND start_date <= ?';
     loanParams.push(endDate);
   }
+  if (fundedBy && fundedBy !== 'all') {
+    loanQuery += ' AND funded_by = ?';
+    loanParams.push(fundedBy);
+  }
+  if (search) {
+    const q = `%${search}%`;
+    loanQuery += ' AND (person_name LIKE ? OR notes LIKE ? OR CAST(amount AS TEXT) LIKE ? OR currency LIKE ? OR strftime("%m", start_date) LIKE ? OR strftime("%B", start_date) LIKE ?)';
+    loanParams.push(q, q, q, q, q, q);
+  }
 
-  const loans = db.getAllSync(loanQuery, loanParams);
+  // Loan creation rows have no payment_source — exclude if paymentSource filter is active
+  const loans = (paymentSource && paymentSource !== 'all') ? [] : db.getAllSync(loanQuery, loanParams);
 
   let repaymentQuery = `
     SELECT r.*, l.person_name, l.type as loan_type, l.currency, l.is_archived 
@@ -473,6 +489,21 @@ export const getLoanTransactionsForHistory = (filters = {}) => {
   if (endDate) {
     repaymentQuery += ' AND r.date <= ?';
     repayParams.push(endDate);
+  }
+  // paymentSource filter: only 'I Borrowed' repayments have payment_source stored
+  if (paymentSource && paymentSource !== 'all') {
+    repaymentQuery += ' AND r.payment_source = ?';
+    repayParams.push(paymentSource);
+  }
+  // fundedBy filter on repayments: use the loan's funded_by (the owner of the loan)
+  if (fundedBy && fundedBy !== 'all') {
+    repaymentQuery += ' AND l.funded_by = ?';
+    repayParams.push(fundedBy);
+  }
+  if (search) {
+    const q = `%${search}%`;
+    repaymentQuery += ' AND (l.person_name LIKE ? OR r.notes LIKE ? OR CAST(r.amount AS TEXT) LIKE ? OR l.currency LIKE ? OR strftime("%m", r.date) LIKE ? OR strftime("%B", r.date) LIKE ?)';
+    repayParams.push(q, q, q, q, q, q);
   }
 
   const repayments = db.getAllSync(repaymentQuery, repayParams);

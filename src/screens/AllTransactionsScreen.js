@@ -62,6 +62,9 @@ export default function AllTransactionsScreen({ navigation, route }) {
   const [archiveMode, setArchiveMode] = useState('Active');
 
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [paymentSource, setPaymentSource] = useState('all');
+  const [fundedBy, setFundedBy] = useState('all');
   const [customStart, setCustomStart] = useState(new Date(new Date().setMonth(new Date().getMonth() - 1)));
   const [customEnd, setCustomEnd] = useState(new Date());
   const [pickerMode, setPickerMode] = useState(null);
@@ -81,7 +84,6 @@ export default function AllTransactionsScreen({ navigation, route }) {
   const [toastMessage, setToastMessage] = useState('');
   const [toastAction, setToastAction] = useState(null);
 
-
   const loadData = () => {
     const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
     const filters = {
@@ -93,6 +95,8 @@ export default function AllTransactionsScreen({ navigation, route }) {
       search: searchQuery,
       investmentId,
       loanId,
+      paymentSource: paymentSource === 'all' ? null : paymentSource,
+      fundedBy: fundedBy === 'all' ? null : fundedBy,
     };
     
     let list = [];
@@ -118,7 +122,7 @@ export default function AllTransactionsScreen({ navigation, route }) {
       setCurrency('all');
     }
     loadData();
-  }, [type, currency, dateFilter, customStart, customEnd, searchQuery, investmentId, archiveMode]));
+  }, [type, currency, dateFilter, customStart, customEnd, searchQuery, investmentId, archiveMode, paymentSource, fundedBy]));
 
 
   const handleFilterSelect = (f) => {
@@ -164,57 +168,6 @@ export default function AllTransactionsScreen({ navigation, route }) {
     return Object.entries(groups).map(([month, data]) => ({ month, ...data }));
   }, [transactions]);
 
-  const summaries = useMemo(() => {
-    const { start, end } = getDatesForFilter(dateFilter, customStart, customEnd);
-    const filters = {
-      startDate: start,
-      endDate: end,
-      currency: currency === 'all' ? null : currency,
-    };
-    
-    const normalTxs = getTransactions(filters);
-    const loanTxs = getLoanTransactionsForHistory(filters);
-    const allTxs = [...normalTxs, ...loanTxs];
-
-    const totals = {
-      AED: { income: 0, expense: 0, investment: 0, surplus: 0, loanGiven: 0, loanRecovered: 0, loanOutstandingGiven: 0, loanBorrowed: 0, loanRepaid: 0, loanOutstandingBorrowed: 0 },
-      INR: { income: 0, expense: 0, investment: 0, surplus: 0, loanGiven: 0, loanRecovered: 0, loanOutstandingGiven: 0, loanBorrowed: 0, loanRepaid: 0, loanOutstandingBorrowed: 0 }
-    };
-
-    allTxs.forEach(tx => {
-      const cur = tx.currency;
-      if (totals[cur]) {
-        if (tx.type === 'income') {
-          totals[cur].income += tx.amount;
-        } else if (tx.type === 'expense') {
-          totals[cur].expense += tx.amount;
-        } else if (tx.type === 'investment') {
-          totals[cur].investment += tx.amount;
-        } else if (tx.type === 'loan') {
-          if (tx.loanType === 'I Gave') {
-            totals[cur].loanGiven += tx.amount;
-          } else if (tx.loanType === 'I Borrowed') {
-            totals[cur].loanBorrowed += tx.amount;
-          }
-        } else if (tx.type === 'repayment') {
-          if (tx.loanType === 'I Gave') {
-            totals[cur].loanRecovered += tx.amount;
-          } else if (tx.loanType === 'I Borrowed') {
-            totals[cur].loanRepaid += tx.amount;
-          }
-        }
-      }
-    });
-
-    ['AED', 'INR'].forEach(cur => {
-      totals[cur].surplus = totals[cur].income - totals[cur].expense - totals[cur].investment;
-      totals[cur].loanOutstandingGiven = Math.max(0, totals[cur].loanGiven - totals[cur].loanRecovered);
-      totals[cur].loanOutstandingBorrowed = Math.max(0, totals[cur].loanBorrowed - totals[cur].loanRepaid);
-    });
-
-    return totals;
-  }, [dateFilter, customStart, customEnd, currency]);
-
   const editFromMenu = () => {
     if (!actionTx) return;
     const tx = actionTx;
@@ -224,6 +177,12 @@ export default function AllTransactionsScreen({ navigation, route }) {
     } else {
       navigation.navigate('AddTransaction', { type: tx.type, mode: 'edit', transactionId: tx.id });
     }
+  };
+
+  const showObToast = () => {
+    setToastMessage('Opening Balances can only be edited from Settings → Opening Balance Wizard.');
+    setToastAction(null);
+    setToastVisible(true);
   };
 
   const requestDeleteFromMenu = () => {
@@ -280,9 +239,17 @@ export default function AllTransactionsScreen({ navigation, route }) {
             <>
               <Text style={styles.title}>{headerTitle}</Text>
               {!loanId && (
-                <TouchableOpacity onPress={toggleSearch} style={styles.headerBtn}>
-                  <Ionicons name="search" size={22} color={colors.text} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                  <TouchableOpacity onPress={() => setShowFilterModal(true)} style={styles.headerBtn}>
+                    <Ionicons name="options-outline" size={22} color={colors.text} />
+                    {(type !== 'all' || currency !== 'all' || paymentSource !== 'all' || fundedBy !== 'all' || archiveMode !== 'Active') && (
+                      <View style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, borderWidth: 1.5, borderColor: colors.background }} />
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={toggleSearch} style={styles.headerBtn}>
+                    <Ionicons name="search" size={22} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
               )}
             </>
           ) : (
@@ -304,31 +271,7 @@ export default function AllTransactionsScreen({ navigation, route }) {
 
 
         {!loanId && (
-          <View style={styles.filtersWrapper}>
-            <View style={styles.filterRow}>
-              {!investmentId && (
-                <View style={[styles.segmentedCtrl, { flex: 2.2 }]}>
-                  {['all', 'income', 'expense', 'investment', 'loan'].map((t) => (
-                    <TouchableOpacity key={t} style={[styles.segBtn, type === t && styles.segBtnActive]} onPress={() => setType(t)}>
-                      <Text style={[styles.segText, type === t && styles.segTextActive]} numberOfLines={1}>
-                        {t === 'all' ? 'All' : t === 'income' ? 'Inc' : t === 'expense' ? 'Exp' : t === 'investment' ? 'Inv' : 'Loan'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              {getActiveCurrencies().length > 1 && (
-                <View style={[styles.segmentedCtrl, investmentId && { flex: 1 }]}>
-                  {['all', ...getActiveCurrencies()].map((c) => (
-                    <TouchableOpacity key={c} style={[styles.segBtn, currency === c && styles.segBtnActive]} onPress={() => setCurrency(c)}>
-                      <Text style={[styles.segText, currency === c && styles.segTextActive]}>{c.toUpperCase()}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
+          <View style={[styles.filtersWrapper, { paddingTop: 14 }]}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, gap: 8, paddingBottom: 14 }}>
               {DATES.map((f) => (
                 <TouchableOpacity
@@ -377,97 +320,6 @@ export default function AllTransactionsScreen({ navigation, route }) {
             </GlassCard>
           )}
 
-          {!loanId && !investmentId && (
-            <>
-              {/* Monthly Summary Card */}
-              <GlassCard style={{ marginBottom: 12 }} contentStyle={{ paddingVertical: 14, paddingHorizontal: 20 }}>
-                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>MONTHLY SUMMARY ({dateFilter})</Text>
-                
-                {/* Table Header */}
-                <View style={styles.tableHeaderRow}>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>CURR</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.5, textAlign: 'right' }]}>INCOME</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.5, textAlign: 'right' }]}>EXPENSE</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.5, textAlign: 'right' }]}>INVEST</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.8, textAlign: 'right' }]}>SURPLUS</Text>
-                </View>
-
-                {/* Table Rows */}
-                {(currency === 'all' ? getActiveCurrencies() : [currency]).map((cur, idx) => {
-                  const summary = summaries[cur];
-                  const surplusColor = summary.surplus >= 0 ? colors.success : colors.danger;
-                  return (
-                    <View key={cur} style={[styles.tableBodyRow, idx > 0 && styles.tableRowDivider]}>
-                      <Text style={[styles.tableBodyCellLabel, { flex: 1.2 }]}>{cur}</Text>
-                      <Text style={[styles.tableBodyCellVal, { flex: 1.5, textAlign: 'right', color: colors.success }]}>{fmt(summary.income)}</Text>
-                      <Text style={[styles.tableBodyCellVal, { flex: 1.5, textAlign: 'right', color: colors.danger }]}>{fmt(summary.expense)}</Text>
-                      <Text style={[styles.tableBodyCellVal, { flex: 1.5, textAlign: 'right', color: colors.accentIndigo }]}>{fmt(summary.investment)}</Text>
-                      <Text style={[styles.tableBodyCellVal, { flex: 1.8, textAlign: 'right', color: surplusColor, fontFamily: 'Inter_700Bold' }]}>
-                        {summary.surplus >= 0 ? '+' : ''}{fmt(summary.surplus)}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </GlassCard>
-
-              {/* Loan Activity Card */}
-              <GlassCard style={{ marginBottom: 12 }} contentStyle={{ paddingVertical: 14, paddingHorizontal: 20 }}>
-                <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>LOAN ACTIVITY ({dateFilter})</Text>
-
-                {/* Table Header */}
-                <View style={styles.tableHeaderRow}>
-                  <Text style={[styles.tableHeaderCell, { flex: 2.2 }]}>FLOW</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.8, textAlign: 'right' }]}>PRINCIPAL</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 1.8, textAlign: 'right' }]}>REPAID</Text>
-                  <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>OUTSTANDING</Text>
-                </View>
-
-                {/* Table Rows */}
-                {(() => {
-                  const loanRows = [];
-                  const currencies = currency === 'all' ? getActiveCurrencies() : [currency];
-                  currencies.forEach(cur => {
-                    // Row: I Gave
-                    loanRows.push({
-                      id: `${cur}-gave`,
-                      flow: `${cur} Gave`,
-                      principal: summaries[cur].loanGiven,
-                      repaid: summaries[cur].loanRecovered,
-                      outstanding: summaries[cur].loanOutstandingGiven,
-                      repaidColor: colors.success,
-                    });
-                    // Row: I Borrowed
-                    loanRows.push({
-                      id: `${cur}-borrowed`,
-                      flow: `${cur} Borrowed`,
-                      principal: summaries[cur].loanBorrowed,
-                      repaid: summaries[cur].loanRepaid,
-                      outstanding: summaries[cur].loanOutstandingBorrowed,
-                      repaidColor: colors.danger,
-                    });
-                  });
-
-                  return loanRows.map((row, idx) => (
-                    <View key={row.id} style={[styles.tableBodyRow, idx > 0 && styles.tableRowDivider]}>
-                      <Text style={[styles.tableBodyCellLabel, { flex: 2.2, color: colors.textSecondary }]}>
-                        {row.flow}
-                      </Text>
-                      <Text style={[styles.tableBodyCellVal, { flex: 1.8, textAlign: 'right', color: colors.text }]}>
-                        {fmt(row.principal)}
-                      </Text>
-                      <Text style={[styles.tableBodyCellVal, { flex: 1.8, textAlign: 'right', color: row.repaidColor }]}>
-                        {fmt(row.repaid)}
-                      </Text>
-                      <Text style={[styles.tableBodyCellVal, { flex: 2, textAlign: 'right', color: '#F59E0B', fontFamily: 'Inter_700Bold' }]}>
-                        {fmt(row.outstanding)}
-                      </Text>
-                    </View>
-                  ));
-                })()}
-              </GlassCard>
-            </>
-          )}
-
           {groupedData.length === 0 ? (
             <FadeInView delay={0}>
               <View style={styles.emptyState}>
@@ -481,25 +333,27 @@ export default function AllTransactionsScreen({ navigation, route }) {
                 <FadeInView delay={groupIndex * 100}>
                   <View style={styles.monthHeader}>
                     <Text style={styles.monthTitle}>{group.month}</Text>
-                    <View style={styles.netRow}>
-                      {(() => {
-                        const activeCurs = getActiveCurrencies();
-                        const displayedCurs = currency === 'all' ? activeCurs : [currency].filter(c => activeCurs.includes(c));
-                        return displayedCurs.map((cur, idx) => {
-                          const isAED = cur === 'AED';
-                          const val = isAED ? group.netAED : group.netINR;
-                          const color = val >= 0 ? (isAED ? colors.success : colors.accentTeal) : colors.danger;
-                          return (
-                            <React.Fragment key={cur}>
-                              {idx > 0 && <Text style={{ color: colors.border }}> | </Text>}
-                              <Text style={[styles.netText, { color }]}>
-                                {cur} Net: {val > 0 ? '+' : ''}{fmt(val)}
-                              </Text>
-                            </React.Fragment>
-                          );
-                        });
-                      })()}
-                    </View>
+                    {type === 'all' && (
+                      <View style={styles.netRow}>
+                        {(() => {
+                          const activeCurs = getActiveCurrencies();
+                          const displayedCurs = currency === 'all' ? activeCurs : [currency].filter(c => activeCurs.includes(c));
+                          return displayedCurs.map((cur, idx) => {
+                            const isAED = cur === 'AED';
+                            const val = isAED ? group.netAED : group.netINR;
+                            const color = val >= 0 ? (isAED ? colors.success : colors.accentTeal) : colors.danger;
+                            return (
+                              <React.Fragment key={cur}>
+                                {idx > 0 && <Text style={{ color: colors.border }}> | </Text>}
+                                <Text style={[styles.netText, { color }]}>
+                                  {cur} Net: {val > 0 ? '+' : ''}{fmt(val)}
+                                </Text>
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
+                      </View>
+                    )}
                   </View>
                 </FadeInView>
 
@@ -522,6 +376,11 @@ export default function AllTransactionsScreen({ navigation, route }) {
                     }
                   }
                   
+                  const isOb = tx.type.startsWith('opening_');
+                  if (isOb) {
+                    txColor = colors.textMuted;
+                  }
+                  
                   const isReceived = tx.type === 'income' || (tx.type === 'loan' && tx.loanType === 'I Borrowed') || (tx.type === 'repayment' && tx.loanType === 'I Gave');
 
                   return (
@@ -529,9 +388,13 @@ export default function AllTransactionsScreen({ navigation, route }) {
                       <View style={styles.txRow}>
                         <Pressable
                           style={styles.txMainPress}
-                          onLongPress={() => openActions(tx)}
+                          onLongPress={() => {
+                            if (isOb) showObToast();
+                            else openActions(tx);
+                          }}
                           onPress={() => {
-                            if (isLoanModule) {
+                            if (isOb) showObToast();
+                            else if (isLoanModule) {
                               navigation.navigate('LoanDetails', { loanId: tx.loanId });
                             }
                           }}
@@ -546,6 +409,27 @@ export default function AllTransactionsScreen({ navigation, route }) {
                               {fmtDate(tx.date)}
                               {tx.notes ? ` · ${tx.notes}` : ''}
                             </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2, minHeight: 14 }}>
+                              {(tx.type === 'expense' || tx.type === 'investment') && tx.payment_source && (
+                                <View style={{ backgroundColor: tx.payment_source === 'Credit Card' ? colors.primary + '20' : colors.accentTeal + '20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: tx.payment_source === 'Credit Card' ? colors.primary : colors.accentTeal }}>
+                                    {tx.payment_source === 'Credit Card' && tx.credit_card_name ? tx.credit_card_name : tx.payment_source}
+                                  </Text>
+                                </View>
+                              )}
+                              {tx.funded_by && (
+                                <View style={{ backgroundColor: colors.card, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
+                                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: tx.funded_by === 'SELF' ? colors.primary : (tx.funded_by === 'SPOUSE' ? '#F59E0B' : colors.textMuted) }}>
+                                    {tx.funded_by === 'SELF' ? '👩🏻 Prathista' : (tx.funded_by === 'SPOUSE' ? '👦🏻 Praveen' : '👥 Other')}
+                                  </Text>
+                                </View>
+                              )}
+                              {isOb && (
+                                <View style={{ backgroundColor: colors.border, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.text }}>Opening Balance</Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
                           <Text
                             style={[styles.txAmount, { color: txColor }]}
@@ -615,6 +499,78 @@ export default function AllTransactionsScreen({ navigation, route }) {
                 </TouchableOpacity>
               </View>
             </GlassCard>
+          </View>
+        </Modal>
+
+        <Modal visible={showFilterModal} transparent animationType="slide" onRequestClose={() => setShowFilterModal(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
+            <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: Platform.OS === 'ios' ? 40 : 20, borderWidth: 1, borderColor: colors.border, borderBottomWidth: 0 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                <Text style={{ ...typography.h2 }}>Advanced Filters</Text>
+                <TouchableOpacity onPress={() => setShowFilterModal(false)} style={{ padding: 4, backgroundColor: colors.cardSolid, borderRadius: 16 }}>
+                  <Ionicons name="close" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {!investmentId && (
+                <View style={{ marginBottom: 18 }}>
+                  <Text style={{ ...typography.label, marginBottom: 8, color: colors.textMuted }}>TRANSACTION TYPE</Text>
+                  <View style={styles.pillContainer}>
+                    {['all', 'income', 'expense', 'investment', 'loan'].map((t) => (
+                      <TouchableOpacity key={t} style={[styles.pillBtn, type === t && styles.pillBtnActive]} onPress={() => setType(t)}>
+                        <Text style={[styles.pillText, type === t && styles.pillTextActive]}>
+                          {t === 'all' ? 'All' : t === 'income' ? 'Income' : t === 'expense' ? 'Expense' : t === 'investment' ? 'Investment' : 'Loan'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {getActiveCurrencies().length > 1 && (
+                <View style={{ marginBottom: 18 }}>
+                  <Text style={{ ...typography.label, marginBottom: 8, color: colors.textMuted }}>CURRENCY</Text>
+                  <View style={styles.pillContainer}>
+                    {['all', ...getActiveCurrencies()].map((c) => (
+                      <TouchableOpacity key={c} style={[styles.pillBtn, currency === c && styles.pillBtnActive]} onPress={() => setCurrency(c)}>
+                        <Text style={[styles.pillText, currency === c && styles.pillTextActive]}>{c.toUpperCase()}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <View style={{ marginBottom: 18 }}>
+                <Text style={{ ...typography.label, marginBottom: 8, color: colors.textMuted }}>PAYMENT SOURCE</Text>
+                <View style={styles.pillContainer}>
+                  {['all', 'Debit Card', 'Credit Card'].map((s) => (
+                    <TouchableOpacity key={s} style={[styles.pillBtn, paymentSource === s && styles.pillBtnActive]} onPress={() => setPaymentSource(s)}>
+                      <Text style={[styles.pillText, paymentSource === s && styles.pillTextActive]}>{s === 'all' ? 'All' : s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={{ marginBottom: 24 }}>
+                <Text style={{ ...typography.label, marginBottom: 8, color: colors.textMuted }}>FUNDED BY</Text>
+                <View style={styles.pillContainer}>
+                  {[
+                    { val: 'all', label: 'All' },
+                    { val: 'SELF', label: '👩🏻 Prathista' },
+                    { val: 'SPOUSE', label: '👦🏻 Praveen' },
+                    { val: 'OTHER', label: '👥 Others' }
+                  ].map((s) => (
+                    <TouchableOpacity key={s.val} style={[styles.pillBtn, fundedBy === s.val && styles.pillBtnActive]} onPress={() => setFundedBy(s.val)}>
+                      <Text style={[styles.pillText, fundedBy === s.val && styles.pillTextActive]}>{s.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              
+              <TouchableOpacity onPress={() => { setType(investmentId ? 'investment' : (loanId ? 'loan' : 'all')); setCurrency('all'); setPaymentSource('all'); setFundedBy('all'); setArchiveMode('Active'); }} style={{ padding: 14, borderRadius: 14, backgroundColor: colors.danger + '15', alignItems: 'center', borderWidth: 1, borderColor: colors.danger + '30' }}>
+                <Text style={{ color: colors.danger, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>Reset Filters</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </Modal>
 
@@ -711,19 +667,32 @@ const styles = StyleSheet.create({
 
   filtersWrapper: { marginBottom: 6 },
   filterRow: { flexDirection: 'row', paddingHorizontal: 18, marginBottom: 12, gap: 10 },
-  segmentedCtrl: {
-    flex: 1,
+  pillContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  pillBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
     backgroundColor: colors.cardSolid,
-    borderRadius: 10,
-    padding: 3,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  segBtn: { flex: 1, paddingVertical: 6, borderRadius: 7, alignItems: 'center' },
-  segBtnActive: { backgroundColor: colors.background },
-  segText: { ...typography.bodySmall, fontSize: 11, fontFamily: 'Inter_600SemiBold' },
-  segTextActive: { color: colors.text, fontFamily: 'Inter_700Bold' },
+  pillBtnActive: {
+    backgroundColor: colors.primary + '20',
+    borderColor: colors.primary,
+  },
+  pillText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  pillTextActive: {
+    color: colors.primary,
+    fontFamily: 'Inter_700Bold',
+  },
 
   dateFilterBtn: {
     paddingHorizontal: 14,

@@ -27,7 +27,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const BalanceRow = ({ code, data, isLast }) => {
   const hasLoans = (data.outstandingGiven || 0) > 0 || (data.outstandingBorrowed || 0) > 0;
   return (
-    <View style={[!isLast && styles.borderBottom, { paddingVertical: 12 }]}>
+    <View style={[!isLast && styles.borderBottom]}>
       <View style={styles.balanceRow}>
         <View style={styles.balanceInfo}>
           <Text style={styles.currencyCode}>{code} CASH BALANCE</Text>
@@ -508,6 +508,22 @@ export default function DashboardScreen({ navigation }) {
                               {fmtDate(tx.date)}
                               {tx.notes ? ` · ${tx.notes}` : ''}
                             </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2, minHeight: 14 }}>
+                              {(tx.type === 'expense' || tx.type === 'investment') && tx.payment_source && (
+                                <View style={{ backgroundColor: tx.payment_source === 'Credit Card' ? colors.primary + '20' : colors.accentTeal + '20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: tx.payment_source === 'Credit Card' ? colors.primary : colors.accentTeal }}>
+                                    {tx.payment_source === 'Credit Card' && tx.credit_card_name ? tx.credit_card_name : tx.payment_source}
+                                  </Text>
+                                </View>
+                              )}
+                              {tx.funded_by && (
+                                <View style={{ backgroundColor: colors.card, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: colors.border }}>
+                                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 10, color: colors.textSecondary }}>
+                                    {tx.funded_by === 'SELF' ? '👩🏻 Prathista' : tx.funded_by === 'SPOUSE' ? '👦🏻 Praveen' : '👥 Others'}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
                           <Text
                             style={[styles.txAmount, { color: txColor }]}

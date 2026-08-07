@@ -44,6 +44,8 @@ export default function AddLoanScreen({ navigation, route }) {
   const [expectedReturnDate, setExpectedReturnDate] = useState(null);
   const [notes, setNotes] = useState('');
   const [ownership, setOwnership] = useState('OTHER');
+  const [isExistingRecord, setIsExistingRecord] = useState(false);
+  const [monthlyEmi, setMonthlyEmi] = useState('');
 
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showExpectedDatePicker, setShowExpectedDatePicker] = useState(false);
@@ -77,6 +79,8 @@ export default function AddLoanScreen({ navigation, route }) {
         setExpectedReturnDate(loan.expected_return_date ? new Date(loan.expected_return_date) : null);
         setNotes(loan.notes || '');
         setOwnership(loan.funded_by || 'OTHER');
+        setIsExistingRecord(loan.is_opening_balance === 1);
+        setMonthlyEmi(loan.monthly_emi ? String(loan.monthly_emi) : '');
       } else {
         Alert.alert('Error', 'Loan not found.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
       }
@@ -102,7 +106,7 @@ export default function AddLoanScreen({ navigation, route }) {
     }
 
     // Balance validation for 'I Gave' loan
-    if (loanType === 'I Gave') {
+    if (loanType === 'I Gave' && !isExistingRecord) {
       const balances = getDashboardBalances();
       const currentBalance = balances[currency]?.balance || 0;
 
@@ -159,7 +163,9 @@ export default function AddLoanScreen({ navigation, route }) {
         startDate: startDate.toISOString(),
         expectedReturnDate: expectedReturnDate ? expectedReturnDate.toISOString() : null,
         notes: notes.trim() || null,
-        fundedBy: ownership
+        fundedBy: ownership,
+        isExisting: isExistingRecord,
+        monthlyEmi: monthlyEmi
       };
 
       if (isEdit) {
@@ -209,7 +215,7 @@ export default function AddLoanScreen({ navigation, route }) {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 />
-                <Text style={styles.fieldLabel}>LOAN AMOUNT</Text>
+                <Text style={styles.fieldLabel}>{isExistingRecord ? 'OUTSTANDING AMOUNT' : 'LOAN AMOUNT'}</Text>
                 <TextInput
                   style={styles.amountInput}
                   placeholder="0.00"
@@ -277,6 +283,47 @@ export default function AddLoanScreen({ navigation, route }) {
                 })}
               </View>
             </FadeInView>
+
+            {!isEdit && (
+              <FadeInView delay={120} style={{ marginTop: 14 }}>
+                <View style={styles.toggleRow}>
+                  <TouchableOpacity
+                    style={[styles.toggleBtn, isExistingRecord && styles.toggleBtnActive, { flex: undefined, paddingHorizontal: 20 }]}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setIsExistingRecord(!isExistingRecord);
+                    }}
+                    disabled={isSaving}
+                  >
+                    <Text style={[styles.toggleBtnText, isExistingRecord && styles.toggleBtnTextActive]}>
+                      {isExistingRecord ? 'Existing Record (Yes)' : 'Existing Record (No)'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {isExistingRecord && (
+                  <View style={{ marginTop: 8, padding: 12, backgroundColor: 'rgba(245, 158, 11, 0.1)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                    <Text style={{ color: '#D97706', fontSize: 11, fontFamily: 'Inter_500Medium' }}>
+                      This loan already existed before you started tracking. The outstanding amount will not reduce your current dashboard balance. Only future repayments will be tracked.
+                    </Text>
+                  </View>
+                )}
+              </FadeInView>
+            )}
+
+            {isExistingRecord && loanType === 'I Borrowed' && (
+              <FadeInView delay={130} style={{ marginTop: 14 }}>
+                <Text style={styles.sectionLabel}>MONTHLY EMI</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="0.00 (Optional)"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={monthlyEmi}
+                  onChangeText={setMonthlyEmi}
+                  editable={!isSaving}
+                />
+              </FadeInView>
+            )}
 
             <FadeInView delay={150}>
               <Text style={styles.sectionLabel}>SOURCE TYPE</Text>

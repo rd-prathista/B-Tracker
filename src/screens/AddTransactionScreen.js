@@ -38,6 +38,8 @@ import {
   addContribution,
   getInvestments,
   updateContribution,
+  getCreditCards,
+  updateMasterInvestment,
 } from '../services/transactionService';
 import { getAppSettings, getDb, getActiveCurrencies } from '../database/db';
 import { useFocusEffect } from '@react-navigation/native';
@@ -60,9 +62,9 @@ export default function AddTransactionScreen({ navigation, route }) {
   const preSelectedInvestmentId = routeParams.investmentId;
 
   const OWNER_OPTIONS = [
-    { label: 'Prathista', value: 'SELF' },
-    { label: 'Praveen', value: 'SPOUSE' },
-    { label: 'Other', value: 'OTHER' }
+    { label: '👩🏻 Prathista', value: 'SELF' },
+    { label: '👦🏻 Praveen', value: 'SPOUSE' },
+    { label: '👥 Others', value: 'OTHER' }
   ];
 
   const isIncome = type === 'income';
@@ -84,6 +86,10 @@ export default function AddTransactionScreen({ navigation, route }) {
   const [targetAmount, setTargetAmount] = useState('');
   const [selectedInvestmentId, setSelectedInvestmentId] = useState(preSelectedInvestmentId || null);
   const [activeInvestments, setActiveInvestments] = useState([]);
+  
+  const [isExistingRecord, setIsExistingRecord] = useState(false);
+  const [completedInstallments, setCompletedInstallments] = useState('');
+  const [alreadyInvested, setAlreadyInvested] = useState('');
 
   const [availableCategories, setAvailableCategories] = useState([]);
 
@@ -91,7 +97,9 @@ export default function AddTransactionScreen({ navigation, route }) {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [showInvestmentPicker, setShowInvestmentPicker] = useState(false);
+  const [showCreditCardPicker, setShowCreditCardPicker] = useState(false);
   const [categorySearch, setCategorySearch] = useState('');
+  const [creditCardSearch, setCreditCardSearch] = useState('');
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('ellipse-outline');
@@ -101,6 +109,9 @@ export default function AddTransactionScreen({ navigation, route }) {
   const [showValidation, setShowValidation] = useState(false);
   const [currencyMode, setCurrencyMode] = useState('AED');
   const [ownership, setOwnership] = useState('OTHER');
+  const [paymentSource, setPaymentSource] = useState('Debit Card');
+  const [creditCardId, setCreditCardId] = useState(null);
+  const [activeCreditCards, setActiveCreditCards] = useState([]);
 
 
   const accentColor = isIncome ? colors.success : (isInvestment ? colors.accentIndigo : colors.danger);
@@ -112,12 +123,51 @@ export default function AddTransactionScreen({ navigation, route }) {
       if (isInvestment) {
         setActiveInvestments(getInvestments('All'));
       }
+      if (!isIncome) {
+        setActiveCreditCards(getCreditCards(true)); // only active cards
+      }
     }, [type, isInvestment])
   );
+
+  useEffect(() => {
+    if (isExistingRecord && amount && completedInstallments) {
+      const amt = parseFloat(amount) || 0;
+      const comp = parseInt(completedInstallments, 10) || 0;
+      setAlreadyInvested(String(amt * comp));
+    }
+  }, [amount, completedInstallments, isExistingRecord]);
 
 
 
   useEffect(() => {
+    if (mode === 'editSetup' && preSelectedInvestmentId) {
+      const master = getDb().getFirstSync(`SELECT * FROM investments WHERE id = ?`, [preSelectedInvestmentId]);
+      if (master) {
+        setInvName(master.name || '');
+        setCategory(master.type || '');
+        setTenureValue(String(master.tenure_value || ''));
+        setTenureType(master.tenure_type || 'Months');
+        setTargetAmount(master.target_amount ? String(master.target_amount) : '');
+        setOwnership(master.funded_by || 'OTHER');
+        setDate(new Date(master.start_date || new Date()));
+        setNotes(master.notes || '');
+
+        // OB_DISABLED: Opening Balance check removed. Always use recurring_amount.
+        /*
+        const opBal = getDb().getFirstSync(`SELECT amount FROM investment_contributions WHERE investment_id = ? AND is_opening_balance = 1`, [preSelectedInvestmentId]);
+        if (opBal) {
+          setIsOpeningBalance(true);
+          setAmount(String(opBal.amount || ''));
+        } else {
+          setIsOpeningBalance(false);
+          setAmount(String(master.recurring_amount || ''));
+        }
+        */
+        setAmount(String(master.recurring_amount || ''));
+      }
+      return;
+    }
+
     if (isEdit) {
       const t = getTransactionById(type, transactionId);
       if (!t) {
@@ -141,6 +191,24 @@ export default function AddTransactionScreen({ navigation, route }) {
       } else {
         setCategory(t.category || '');
         setOwnership(t.income_source || t.funded_by || 'OTHER');
+      }
+
+      setPaymentSource(t.payment_source || 'Debit Card');
+      setCreditCardId(t.credit_card_id || null);
+      
+      // If editing a credit card transaction, ensure the card is available in the list 
+      // even if it's inactive now, so we need to fetch all cards just for this.
+      if (t.payment_source === 'Credit Card' && t.credit_card_id) {
+        const allCards = getCreditCards(false);
+        const theCard = allCards.find(c => c.id === t.credit_card_id);
+        if (theCard && theCard.status === 'Inactive') {
+          setActiveCreditCards(prev => {
+            if (!prev.find(c => c.id === theCard.id)) {
+              return [...prev, theCard];
+            }
+            return prev;
+          });
+        }
       }
       setNotes(t.notes ?? '');
       try {
@@ -182,7 +250,7 @@ export default function AddTransactionScreen({ navigation, route }) {
 
   useEffect(() => {
     if (isEdit || availableCategories.length === 0) return;
-    if (isInvestment && mode === 'setup') {
+    if (isInvestment && (mode === 'setup' || mode === 'editSetup')) {
       setCategory('Investment'); // Default for setup
     } else {
       setCategory((prev) => (prev ? prev : availableCategories[0].name));
@@ -232,7 +300,7 @@ export default function AddTransactionScreen({ navigation, route }) {
     }
 
     if (isInvestment) {
-      if (mode === 'setup') {
+      if (mode === 'setup' || mode === 'editSetup') {
         if (!invName) { Alert.alert('Missing Name', 'Please enter investment name.'); return; }
         if (!tenureValue) { Alert.alert('Missing Tenure', 'Please enter tenure.'); return; }
       } else if (mode === 'contribution' || mode === 'edit') {
@@ -259,20 +327,23 @@ export default function AddTransactionScreen({ navigation, route }) {
 
       if (isEdit) {
         if (isInvestment) {
-          updateContribution(transactionId, {
-            amount,
-            date: isoDate,
-            notes,
-            attachmentUri: attachmentStr,
-            masterUpdates: {
-              name: invName,
-              category,
-              tenure_value: tenureValue,
-              tenure_type: tenureType,
-              target_amount: targetAmount,
-              funded_by: ownership,
-            }
-          });
+            updateContribution(transactionId, {
+              amount,
+              date: isoDate,
+              notes,
+              attachmentUri: attachmentStr,
+              paymentSource: paymentSource,
+              creditCardId: paymentSource === 'Credit Card' ? creditCardId : null,
+              owner: ownership,
+              masterUpdates: {
+                name: invName,
+                category,
+                tenure_value: tenureValue,
+                tenure_type: tenureType,
+                target_amount: targetAmount,
+                funded_by: ownership,
+              }
+            });
         } else {
           updateTransaction(type, transactionId, {
             amount,
@@ -282,11 +353,26 @@ export default function AddTransactionScreen({ navigation, route }) {
             notes,
             attachmentUri: attachmentStr,
             owner: ownership,
+            paymentSource: type === 'expense' ? paymentSource : undefined,
+            creditCardId: type === 'expense' && paymentSource === 'Credit Card' ? creditCardId : null,
           });
         }
         setToastMessage('✓ Entry updated successfully');
       } else if (isInvestment) {
-        if (mode === 'setup') {
+        if (mode === 'editSetup') {
+          updateMasterInvestment(preSelectedInvestmentId, {
+            name: invName,
+            type: category,
+            recurringAmount: amount ? parseFloat(amount) : 0, // OB_DISABLED: was: isOpeningBalance ? 0 : (amount ? parseFloat(amount) : 0)
+            startDate: isoDate,
+            tenureValue: parseInt(tenureValue),
+            tenureType: tenureType,
+            targetAmount: targetAmount ? parseFloat(targetAmount) : null,
+            notes,
+            funded_by: ownership
+          });
+          setToastMessage('✓ Investment updated successfully');
+        } else if (mode === 'setup') {
           addInvestment({
             name: invName,
             type: category, 
@@ -298,14 +384,23 @@ export default function AddTransactionScreen({ navigation, route }) {
             target_amount: targetAmount ? parseFloat(targetAmount) : null,
             notes,
             funded_by: ownership,
+            payment_source: paymentSource,
+            credit_card_id: paymentSource === 'Credit Card' ? creditCardId : null,
+            is_existing: isExistingRecord,
+            completed_installments: completedInstallments,
+            already_invested: alreadyInvested
           });
           setToastMessage('✓ Investment saved successfully');
         } else {
-          addContribution(selectedInvestmentId, amount, isoDate, notes, attachmentStr);
+          addContribution(selectedInvestmentId, amount, isoDate, notes, attachmentStr, paymentSource, paymentSource === 'Credit Card' ? creditCardId : null, ownership);
           setToastMessage('✓ Contribution added successfully');
         }
       } else {
-        addTransaction(type, amount, currency, isoDate, category, notes, attachmentStr, ownership);
+        if (type === 'expense') {
+          addTransaction(type, amount, currency, isoDate, category, notes, attachmentStr, ownership, paymentSource, paymentSource === 'Credit Card' ? creditCardId : null);
+        } else {
+          addTransaction(type, amount, currency, isoDate, category, notes, attachmentStr, ownership);
+        }
         setToastMessage(isIncome ? '✓ Income saved successfully' : '✓ Expense saved successfully');
       }
       
@@ -337,7 +432,7 @@ export default function AddTransactionScreen({ navigation, route }) {
   };
 
   const screenTitle = isInvestment 
-    ? (mode === 'setup' ? 'Setup Investment' : (mode === 'contribution' ? 'Add Contribution' : 'Edit Investment'))
+    ? (mode === 'setup' ? 'Setup Investment' : (mode === 'editSetup' ? 'Edit Investment' : (mode === 'contribution' ? 'Add Contribution' : 'Edit Contribution')))
     : (isIncome ? (isEdit ? 'Edit Income' : 'Add Income') : (isEdit ? 'Edit Expense' : 'Add Expense'));
 
   return (
@@ -367,9 +462,15 @@ export default function AddTransactionScreen({ navigation, route }) {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 />
-                <Text style={styles.fieldLabel}>{isInvestment && mode === 'setup' ? 'RECURRING AMOUNT' : 'AMOUNT'}</Text>
+                {/* OB_DISABLED notes: label was isOpeningBalance ? 'OPENING BALANCE' : 'RECURRING AMOUNT'
+                    style opacity was (isOpeningBalance || isSaving); autoFocus was !isEdit && !isOpeningBalance; editable was !isSaving && !isOpeningBalance */}
+                <Text style={styles.fieldLabel}>
+                  {isInvestment && (mode === 'setup' || mode === 'editSetup') 
+                    ? (isExistingRecord ? 'MONTHLY AMOUNT' : 'RECURRING AMOUNT') 
+                    : 'AMOUNT'}
+                </Text>
                 <TextInput
-                  style={[styles.amountInput, { color: accentColor }]}
+                  style={[styles.amountInput, { color: accentColor }, isSaving && { opacity: 0.7 }]}
                   placeholder="0.00"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
@@ -412,7 +513,7 @@ export default function AddTransactionScreen({ navigation, route }) {
             </FadeInView>
 
             {/* Investment Specific Fields */}
-            {isInvestment && (mode === 'setup' || mode === 'edit') && (
+            {isInvestment && (mode === 'setup' || mode === 'editSetup' || mode === 'edit') && (
               <FadeInView delay={50}>
                 <Text style={styles.sectionLabel}>INVESTMENT NAME</Text>
                 <TextInput
@@ -452,6 +553,61 @@ export default function AddTransactionScreen({ navigation, route }) {
                     </View>
                   </View>
                 </View>
+
+                {mode === 'setup' && (
+                  <View style={{ marginBottom: 18 }}>
+                    <View style={styles.toggleRow}>
+                      <TouchableOpacity
+                        style={[styles.typeBtn, isExistingRecord && styles.typeBtnActive, { flex: undefined, paddingHorizontal: 20 }]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setIsExistingRecord(!isExistingRecord);
+                        }}
+                        disabled={isSaving}
+                      >
+                        <Text style={[styles.typeText, isExistingRecord && styles.typeTextActive]}>
+                          {isExistingRecord ? 'Existing Record (Yes)' : 'Existing Record (No)'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {isExistingRecord && (
+                      <View style={{ marginTop: 8, padding: 12, backgroundColor: 'rgba(99, 102, 241, 0.1)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.3)' }}>
+                        <Text style={{ color: '#4F46E5', fontSize: 11, fontFamily: 'Inter_500Medium' }}>
+                          Already completed installments won't affect your balance or reports. Only future installments will be tracked normally.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {isExistingRecord && (
+                  <View style={{ flexDirection: 'row', gap: 12, marginBottom: 18 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sectionLabel}>COMPLETED INSTALLMENTS</Text>
+                      <TextInput
+                        style={[styles.notesInput, { marginTop: 8, marginBottom: 0 }]}
+                        placeholder="e.g. 3"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="number-pad"
+                        value={completedInstallments}
+                        onChangeText={setCompletedInstallments}
+                        editable={!isSaving}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sectionLabel}>ALREADY INVESTED</Text>
+                      <TextInput
+                        style={[styles.notesInput, { marginTop: 8, marginBottom: 0 }]}
+                        placeholder="0.00"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="decimal-pad"
+                        value={alreadyInvested}
+                        onChangeText={setAlreadyInvested}
+                        editable={!isSaving}
+                      />
+                    </View>
+                  </View>
+                )}
 
                 <Text style={styles.sectionLabel}>TARGET AMOUNT (OPTIONAL)</Text>
                 <TextInput
@@ -499,7 +655,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                   <Ionicons name="calendar-outline" size={18} color={accentColor} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.dateLabel}>{isInvestment && mode === 'setup' ? 'START DATE' : 'DATE'}</Text>
+                  <Text style={styles.dateLabel}>{isInvestment && (mode === 'setup' || mode === 'editSetup') ? 'START DATE' : 'DATE'}</Text>
                   <Text style={styles.dateValue}>{formatDate(date)}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
@@ -518,7 +674,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               )}
             </FadeInView>
 
-            {(!isInvestment || mode === 'setup' || mode === 'edit') && (
+            {(!isInvestment || mode === 'setup' || mode === 'editSetup' || mode === 'edit') && (
               <FadeInView delay={160} style={{ marginBottom: 20 }}>
                 <View style={styles.sectionRow}>
                   <Text style={styles.sectionLabel}>{isInvestment ? 'INVESTMENT TYPE' : 'CATEGORY'}</Text>
@@ -554,7 +710,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               </FadeInView>
             )}
 
-            {(!isInvestment || mode === 'setup' || isEdit) && (
+            {(!isInvestment || mode === 'setup' || mode === 'editSetup' || mode === 'contribution' || isEdit) && (
               <FadeInView delay={200} style={{ marginBottom: 20 }}>
                 <Text style={styles.sectionLabel}>{isIncome ? 'INCOME SOURCE' : 'FUNDED BY'}</Text>
                 <View style={styles.typeToggleRow}>
@@ -583,7 +739,68 @@ export default function AddTransactionScreen({ navigation, route }) {
               </FadeInView>
             )}
 
-            <FadeInView delay={240}>
+            {!isIncome && (
+              <FadeInView delay={250} style={{ marginBottom: 20 }}>
+                <Text style={styles.sectionLabel}>PAYMENT SOURCE</Text>
+                <View style={styles.typeToggleRow}>
+                  {['Debit Card', 'Credit Card'].map((ps) => {
+                    const isSelected = paymentSource === ps;
+                    return (
+                      <TouchableOpacity
+                        key={ps}
+                        style={[
+                          styles.typeBtn,
+                          isSelected && { backgroundColor: accentColor }
+                        ]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setPaymentSource(ps);
+                          if (ps === 'Credit Card' && activeCreditCards.length > 0 && !creditCardId) {
+                            setCreditCardId(activeCreditCards[0].id);
+                          }
+                        }}
+                        disabled={isSaving}
+                      >
+                        <Text style={[styles.typeText, isSelected && styles.typeTextActive]}>
+                          {ps}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {paymentSource === 'Credit Card' && (
+                  <View style={{ marginTop: 16 }}>
+                    <Text style={styles.sectionLabel}>CREDIT CARD</Text>
+                    {activeCreditCards.length === 0 ? (
+                      <Text style={[styles.placeholderText, { marginLeft: 6 }]}>No active credit cards available.</Text>
+                    ) : (
+                      <TouchableOpacity 
+                        style={[styles.categorySelectBtn, !creditCardId && styles.invalidBtn]} 
+                        onPress={() => setShowCreditCardPicker(true)}
+                        disabled={isSaving}
+                      >
+                        <View style={styles.categorySelectLeft}>
+                          {creditCardId ? (
+                            <>
+                              <Ionicons name="card" size={18} color={accentColor} />
+                              <Text style={styles.selectedCategoryText}>
+                                {activeCreditCards.find(cc => cc.id === creditCardId)?.name || 'Select Credit Card'}
+                              </Text>
+                            </>
+                          ) : (
+                            <Text style={styles.placeholderText}>Select Credit Card</Text>
+                          )}
+                        </View>
+                        <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </FadeInView>
+            )}
+
+            <FadeInView delay={isInvestment ? 300 : (!isIncome && !isInvestment ? 300 : 250)}>
               <Text style={styles.sectionLabel}>NOTES (OPTIONAL)</Text>
               <TextInput
                 style={styles.notesInput}
@@ -642,7 +859,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                     />
                   )}
                   <Text style={styles.saveText}>
-                    {isSaving ? 'Saving…' : isEdit ? 'Save changes' : (mode === 'setup' ? 'Create Investment' : `Save ${isIncome ? 'Income' : (isInvestment ? 'Contribution' : 'Expense')}`)}
+                    {isSaving ? 'Saving…' : (isEdit || mode === 'editSetup') ? 'Save changes' : (mode === 'setup' ? 'Create Investment' : `Save ${isIncome ? 'Income' : (isInvestment ? 'Contribution' : 'Expense')}`)}
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -759,6 +976,64 @@ export default function AddTransactionScreen({ navigation, route }) {
                           {cat.name}
                         </Text>
                         {category === cat.name && <Ionicons name="checkmark-circle" size={20} color={accentColor} />}
+                      </TouchableOpacity>
+                    ))
+                )}
+              </ScrollView>
+            </GlassCard>
+          </View>
+        </Modal>
+        {/* Credit Card Picker Modal */}
+        <Modal visible={showCreditCardPicker} transparent animationType="slide">
+          <View style={styles.overlay}>
+            <GlassCard style={styles.pickerModal} contentStyle={{ flex: 1 }}>
+
+              <View style={styles.pickerHeader}>
+                <Text style={styles.modalTitle}>Select Credit Card</Text>
+                <TouchableOpacity onPress={() => setShowCreditCardPicker(false)}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.searchBar}>
+                <Ionicons name="search" size={18} color={colors.textMuted} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search..."
+                  placeholderTextColor={colors.textMuted}
+                  value={creditCardSearch}
+                  onChangeText={setCreditCardSearch}
+                  autoFocus
+                  returnKeyType="search"
+                />
+              </View>
+
+              <ScrollView style={styles.pickerList} keyboardShouldPersistTaps="handled">
+                {activeCreditCards.filter(cc => cc.name.toLowerCase().includes(creditCardSearch.toLowerCase())).length === 0 ? (
+                  <View style={{ alignItems: 'center', marginTop: 40 }}>
+                    <Ionicons name="search-outline" size={40} color={colors.textMuted} />
+                    <Text style={{ ...typography.bodySmall, marginTop: 10 }}>No items found</Text>
+                  </View>
+                ) : (
+                  activeCreditCards
+                    .filter(cc => cc.name.toLowerCase().includes(creditCardSearch.toLowerCase()))
+                    .map((cc) => (
+                      <TouchableOpacity
+                        key={cc.id}
+                        style={[styles.pickerItem, creditCardId === cc.id && styles.pickerItemActive]}
+                        onPress={() => {
+                          setCreditCardId(cc.id);
+                          setShowCreditCardPicker(false);
+                          setCreditCardSearch('');
+                        }}
+                      >
+                        <View style={[styles.pickerIcon, { backgroundColor: (creditCardId === cc.id ? accentColor : colors.textMuted) + '20' }]}>
+                          <Ionicons name="card" size={20} color={creditCardId === cc.id ? accentColor : colors.textMuted} />
+                        </View>
+                        <Text style={[styles.pickerItemText, creditCardId === cc.id && { color: accentColor, fontFamily: 'Inter_700Bold' }]}>
+                          {cc.name}
+                        </Text>
+                        {creditCardId === cc.id && <Ionicons name="checkmark-circle" size={20} color={accentColor} />}
                       </TouchableOpacity>
                     ))
                 )}

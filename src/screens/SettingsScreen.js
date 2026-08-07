@@ -20,6 +20,7 @@ import { checkBiometricsAvailability, isBiometricsEnabledInSettings } from '../s
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { getCreditCards, addCreditCard, updateCreditCard, deleteCreditCard, checkCreditCardInUse } from '../services/transactionService';
 
 export default function SettingsScreen({ navigation, route }) {
   const { onLogout } = route.params || {};
@@ -74,6 +75,7 @@ export default function SettingsScreen({ navigation, route }) {
 
     const available = await checkBiometricsAvailability();
     setBiometricsAvailable(available);
+
   };
 
 
@@ -209,12 +211,14 @@ export default function SettingsScreen({ navigation, route }) {
       { 
         text: 'Logout', 
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
+          await firebaseLogout();
           if (onLogout) onLogout();
         } 
       }
     ]);
   };
+
 
   const handleToggleBiometrics = async () => {
     if (settingLoading) return;
@@ -430,6 +434,12 @@ export default function SettingsScreen({ navigation, route }) {
               <SettingItem icon="lock-closed-outline" label="Change PIN" onPress={() => navigation.navigate('Security', { type: 'pin' })} />
               <View style={styles.divider} />
               <SettingItem icon="list-outline" label="Manage Categories" onPress={() => navigation.navigate('CategoryManagement')} />
+              <View style={styles.divider} />
+              <SettingItem icon="card-outline" label="Manage Credit Cards" onPress={() => navigation.navigate('CreditCardManagement')} />
+              {/* OB_DISABLED:
+              <View style={styles.divider} />
+              <SettingItem icon="wallet-outline" label="Opening Balance Wizard" color={colors.accentOrange} onPress={() => navigation.navigate('OpeningBalanceWizard')} />
+              */}
               
               {biometricsAvailable && (
                 <>
@@ -450,6 +460,8 @@ export default function SettingsScreen({ navigation, route }) {
             </GlassCard>
 
           </FadeInView>
+
+
 
           <FadeInView delay={100}>
             <View style={styles.sectionHeaderRow}>
