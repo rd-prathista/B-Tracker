@@ -16,6 +16,7 @@ import { initDatabase } from './src/database/db';
 import { colors } from './src/theme/colors';
 
 export default function App() {
+  const [dbReady, setDbReady] = React.useState(false);
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -25,11 +26,17 @@ export default function App() {
   });
 
   useEffect(() => {
-    initDatabase();
+    try {
+      initDatabase();
+    } catch (e) {
+      console.error('App initDatabase error:', e);
+    } finally {
+      setDbReady(true);
+    }
   }, []);
 
-  // Wait for fonts before rendering to avoid unstyled flash
-  if (!fontsLoaded) {
+  // Wait for fonts & database initialization before rendering to avoid racing queries
+  if (!fontsLoaded || !dbReady) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.primary} size="large" />

@@ -411,6 +411,21 @@ export const getTransactions = (filters = {}) => {
 
 export const getDashboardBalances = () => {
   const db = getDb();
+
+  // [DB PRE-DASHBOARD CHECK] Verify column presence on the exact same DB connection
+  try {
+    const tableInfo = db.getAllSync(`PRAGMA table_info(loans);`);
+    const hasOpeningCol = tableInfo.some(c => c.name === 'is_opening_balance');
+    console.log(`[DB PRE-DASHBOARD CHECK] loans.is_opening_balance exists = ${hasOpeningCol ? 'YES' : 'NO'}`);
+    
+    if (!hasOpeningCol) {
+      throw new Error(`[DB PRE-DASHBOARD CHECK] loans.is_opening_balance exists = NO. Database initialization has not completed.`);
+    }
+  } catch (e) {
+    console.error('Pre-Dashboard audit check error:', e);
+    throw e;
+  }
+
   const getByCode = (code) => {
     if (!isCurrencyActive(code)) {
       return { income: 0, expense: 0, investment: 0, balance: 0 };

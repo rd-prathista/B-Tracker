@@ -469,6 +469,13 @@ export const initDatabase = () => {
   }
 };
 
+// Immediate synchronous initialization on module import
+try {
+  initDatabase();
+} catch (e) {
+  console.error("Top-level initDatabase error:", e);
+}
+
 export const getDb = () => db;
 
 export const getAppSettings = () => {
