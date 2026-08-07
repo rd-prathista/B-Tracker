@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getReportData, getCategoryTrends, getSavingsTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment, getOwnershipBalanceBreakdown, getCreditCardSpending } from '../services/transactionService';
+import { getReportData, getCategoryTrends, getCashflowTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment, getOwnershipBalanceBreakdown, getCreditCardSpending } from '../services/transactionService';
 import { getLoans, getLoanSummary } from '../services/loanService';
 import { getActiveCurrencies } from '../database/db';
 
