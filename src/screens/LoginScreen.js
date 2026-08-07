@@ -39,7 +39,9 @@ export default function LoginScreen({ navigation, route }) {
       if (enabled) {
         const success = await authenticateBiometrics();
         if (success) {
-          route.params?.onLoginSuccess?.();
+          setTimeout(() => {
+            route.params?.onLoginSuccess?.();
+          }, 500);
         }
       }
     };
@@ -53,7 +55,9 @@ export default function LoginScreen({ navigation, route }) {
   const handleBiometricAuth = async () => {
     const success = await authenticateBiometrics();
     if (success) {
-      route.params?.onLoginSuccess?.();
+      setTimeout(() => {
+        route.params?.onLoginSuccess?.();
+      }, 500);
     }
   };
 
