@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
+  Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
   },
   codeText: {
     color: '#A7F3D0',
-    fontFamily: 'Platform' === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontSize: 11,
     lineHeight: 16,
   },
