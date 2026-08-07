@@ -102,55 +102,66 @@ export default function DashboardScreen({ navigation }) {
   const [toastAction, setToastAction] = useState(null);
 
   const loadData = () => {
-    const b = getDashboardBalances();
-    
-    // Enrich with outstanding loans
-    const aedLoans = getLoanSummary('AED');
-    const inrLoans = getLoanSummary('INR');
-    b.AED.outstandingGiven = aedLoans.outstandingGiven;
-    b.AED.outstandingBorrowed = aedLoans.outstandingBorrowed;
-    b.INR.outstandingGiven = inrLoans.outstandingGiven;
-    b.INR.outstandingBorrowed = inrLoans.outstandingBorrowed;
-    
-    setBalances(b);
-
-    const inactiveList = [];
-    ['AED', 'INR'].forEach(code => {
-      if (!isCurrencyActive(code)) {
-        const obs = getInactiveCurrencyObligations(code);
-        inactiveList.push({
-          code,
-          receivable: obs.outstandingReceivable,
-          payable: obs.outstandingPayable
-        });
-      }
-    });
-    setInactiveReminders(inactiveList);
-    
-    // Merge recent transactions and recent loans/repayments
-    const normalTxs = getRecentTransactions(10);
-    const loanTxs = getLoanTransactionsForHistory({ limit: 10 });
-    const mergedRecent = [...normalTxs, ...loanTxs]
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, 2); // display top 2
+    try {
+      const b = getDashboardBalances() || {};
       
-    setRecentTx(mergedRecent);
-    setActiveInvestments(getActiveInvestmentsSummary());
-    setReminders(getUpcomingReminders());
-    setArchivableCount(getArchivableCount(6));
-    
-    setHasData(
-      b.AED.income > 0 || 
-      b.AED.expense > 0 || 
-      b.AED.investment > 0 || 
-      b.INR.income > 0 || 
-      b.INR.expense > 0 || 
-      b.INR.investment > 0 ||
-      b.AED.outstandingGiven > 0 ||
-      b.AED.outstandingBorrowed > 0 ||
-      b.INR.outstandingGiven > 0 ||
-      b.INR.outstandingBorrowed > 0
-    );
+      const safeAED = b.AED || { income: 0, expense: 0, investment: 0, balance: 0 };
+      const safeINR = b.INR || { income: 0, expense: 0, investment: 0, balance: 0 };
+
+      // Enrich with outstanding loans
+      const aedLoans = getLoanSummary('AED') || { outstandingGiven: 0, outstandingBorrowed: 0 };
+      const inrLoans = getLoanSummary('INR') || { outstandingGiven: 0, outstandingBorrowed: 0 };
+
+      safeAED.outstandingGiven = aedLoans.outstandingGiven || 0;
+      safeAED.outstandingBorrowed = aedLoans.outstandingBorrowed || 0;
+      safeINR.outstandingGiven = inrLoans.outstandingGiven || 0;
+      safeINR.outstandingBorrowed = inrLoans.outstandingBorrowed || 0;
+      
+      const updatedBalances = { AED: safeAED, INR: safeINR };
+      setBalances(updatedBalances);
+
+      const inactiveList = [];
+      ['AED', 'INR'].forEach(code => {
+        if (!isCurrencyActive(code)) {
+          const obs = getInactiveCurrencyObligations(code) || {};
+          inactiveList.push({
+            code,
+            receivable: obs.outstandingReceivable || 0,
+            payable: obs.outstandingPayable || 0
+          });
+        }
+      });
+      setInactiveReminders(inactiveList);
+      
+      // Merge recent transactions and recent loans/repayments
+      const normalTxs = getRecentTransactions(10) || [];
+      const loanTxs = getLoanTransactionsForHistory({ limit: 10 }) || [];
+      const mergedRecent = [...normalTxs, ...loanTxs]
+        .filter(tx => tx && tx.date)
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+        .slice(0, 2); // display top 2
+        
+      setRecentTx(mergedRecent);
+      setActiveInvestments(getActiveInvestmentsSummary() || []);
+      setReminders(getUpcomingReminders() || []);
+      setArchivableCount(getArchivableCount(6) || 0);
+      
+      setHasData(
+        (safeAED.income || 0) > 0 || 
+        (safeAED.expense || 0) > 0 || 
+        (safeAED.investment || 0) > 0 || 
+        (safeINR.income || 0) > 0 || 
+        (safeINR.expense || 0) > 0 || 
+        (safeINR.investment || 0) > 0 ||
+        (safeAED.outstandingGiven || 0) > 0 ||
+        (safeAED.outstandingBorrowed || 0) > 0 ||
+        (safeINR.outstandingGiven || 0) > 0 ||
+        (safeINR.outstandingBorrowed || 0) > 0
+      );
+    } catch (e) {
+      console.error('Error loading Dashboard data:', e);
+      throw e;
+    }
   };
 
 

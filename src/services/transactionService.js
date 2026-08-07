@@ -1094,8 +1094,9 @@ export const getSavingsTrends = (archiveMode = 'Active', ownerFilter) => {
   const ownerParams = ownerFilter && ownerFilter !== 'ALL' ? [ownerFilter, ownerFilter] : [];
 
   const activeCurs = getActiveCurrencies();
-  const placeholders = activeCurs.map(() => '?').join(', ');
-  const queryParams = [...ownerParams, ...activeCurs];
+  const safeCurs = (Array.isArray(activeCurs) && activeCurs.length > 0) ? activeCurs : ['AED', 'INR'];
+  const placeholders = safeCurs.map(() => '?').join(', ');
+  const queryParams = [...ownerParams, ...safeCurs];
 
   const rows = db.getAllSync(`
     SELECT strftime('%Y-%m', date) as month, currency, SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as totalIncome, SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as totalExpense

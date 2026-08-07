@@ -11,6 +11,7 @@ import {
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
 import AppNavigator from './src/navigation/AppNavigator';
+import StartupErrorBoundary from './src/components/StartupErrorBoundary';
 import { initDatabase } from './src/database/db';
 import { colors } from './src/theme/colors';
 
@@ -39,7 +40,9 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" backgroundColor={colors.background} />
-      <AppNavigator />
+      <StartupErrorBoundary>
+        <AppNavigator />
+      </StartupErrorBoundary>
     </SafeAreaProvider>
   );
 }

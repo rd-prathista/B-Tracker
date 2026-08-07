@@ -565,7 +565,10 @@ export const getActiveCurrencies = () => {
   try {
     const settings = getAppSettings();
     if (settings && settings.active_currencies) {
-      return JSON.parse(settings.active_currencies);
+      const parsed = JSON.parse(settings.active_currencies);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
     }
   } catch (e) {
     console.error('Error getting active currencies:', e);

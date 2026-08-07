@@ -432,14 +432,15 @@ export const getLoanTransactionsForHistory = (filters = {}) => {
   }
 
   const activeCurs = getActiveCurrencies();
-  const placeholders = activeCurs.map(() => '?').join(', ');
+  const safeCurs = (Array.isArray(activeCurs) && activeCurs.length > 0) ? activeCurs : ['AED', 'INR'];
+  const placeholders = safeCurs.map(() => '?').join(', ');
 
   if (currency && currency !== 'all') {
     loanQuery += ' AND currency = ?';
     loanParams.push(currency);
   } else {
     loanQuery += ` AND currency IN (${placeholders})`;
-    loanParams.push(...activeCurs);
+    loanParams.push(...safeCurs);
   }
   
   if (startDate) {
@@ -480,7 +481,7 @@ export const getLoanTransactionsForHistory = (filters = {}) => {
     repayParams.push(currency);
   } else {
     repaymentQuery += ` AND l.currency IN (${placeholders})`;
-    repayParams.push(...activeCurs);
+    repayParams.push(...safeCurs);
   }
   if (startDate) {
     repaymentQuery += ' AND r.date >= ?';
