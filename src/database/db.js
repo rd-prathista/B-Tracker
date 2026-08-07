@@ -3,6 +3,50 @@ import * as SQLite from 'expo-sqlite';
 // Open the database (creates it if it doesn't exist)
 const db = SQLite.openDatabaseSync('btracker.db');
 
+const ensureColumnExists = (dbInstance, tableName, columnName, columnDef) => {
+  try {
+    const tableInfo = dbInstance.getAllSync(`PRAGMA table_info(${tableName});`);
+    const exists = tableInfo.some(col => col.name === columnName);
+    console.log(`[DB Schema Check] ${tableName}.${columnName}: ${exists ? 'EXISTS' : 'MISSING'}`);
+    if (!exists) {
+      console.log(`[DB Schema Repair] Executing: ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
+      dbInstance.execSync(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef};`);
+      console.log(`[DB Schema Repair] Successfully added ${columnName} to ${tableName}`);
+    }
+  } catch (e) {
+    console.error(`[DB Schema Error] Failed to ensure column ${columnName} on table ${tableName}:`, e);
+  }
+};
+
+const verifyAndRepairSchema = (dbInstance) => {
+  console.log('[DB Schema Audit] Running dynamic schema verification & self-healing audit...');
+  
+  ensureColumnExists(dbInstance, 'loans', 'is_opening_balance', 'INTEGER DEFAULT 0');
+  ensureColumnExists(dbInstance, 'loans', 'monthly_emi', 'REAL DEFAULT 0');
+  ensureColumnExists(dbInstance, 'loans', 'funded_by', "TEXT DEFAULT 'OTHER'");
+
+  ensureColumnExists(dbInstance, 'investment_contributions', 'is_opening_balance', 'INTEGER DEFAULT 0');
+  ensureColumnExists(dbInstance, 'investment_contributions', 'funded_by', "TEXT DEFAULT 'OTHER'");
+
+  ensureColumnExists(dbInstance, 'investments', 'completed_installments', 'INTEGER DEFAULT 0');
+  ensureColumnExists(dbInstance, 'investments', 'funded_by', "TEXT DEFAULT 'OTHER'");
+
+  ensureColumnExists(dbInstance, 'expenses', 'payment_source', "TEXT DEFAULT 'Debit Card'");
+  ensureColumnExists(dbInstance, 'expenses', 'credit_card_id', 'INTEGER');
+  ensureColumnExists(dbInstance, 'expenses', 'funded_by', "TEXT DEFAULT 'OTHER'");
+
+  ensureColumnExists(dbInstance, 'income', 'income_source', "TEXT DEFAULT 'OTHER'");
+
+  try {
+    const loansCols = dbInstance.getAllSync(`PRAGMA table_info(loans);`).map(c => c.name);
+    const contribCols = dbInstance.getAllSync(`PRAGMA table_info(investment_contributions);`).map(c => c.name);
+    console.log('[DB Schema Audit Final] Verified loans columns:', loansCols);
+    console.log('[DB Schema Audit Final] Verified investment_contributions columns:', contribCols);
+  } catch (e) {
+    console.error('[DB Schema Audit Final] Inspection failed:', e);
+  }
+};
+
 export const initDatabase = () => {
   try {
     // 1. Enable journal mode and open baseline tables
@@ -143,13 +187,13 @@ export const initDatabase = () => {
     const versionResult = db.getFirstSync("PRAGMA user_version;");
     const currentVersion = versionResult ? versionResult.user_version : 0;
 
-    if (currentVersion < 8) {
+    console.log(`[DB Init] Current database user_version: ${currentVersion}`);
+
+    if (currentVersion < 18) {
       console.log(`Running database migration/repair (current version: ${currentVersion})`);
       
       // Temporarily disable foreign keys during schema alterations
       db.execSync("PRAGMA foreign_keys = OFF;");
-
-      if (currentVersion < 5) {
 
       if (currentVersion < 4) {
         // Case A: User has investments_old from a failed/incomplete migration. Restore it.
@@ -166,8 +210,6 @@ export const initDatabase = () => {
           }
         }
 
-        // Case B: User has the old investments table from pre-v3.1 (columns category, date, etc. instead of tenure_value)
-        // Check if table exists and has old schema columns (like amount)
         let hasOldColumns = false;
         const investmentsTableExists = db.getAllSync("SELECT name FROM sqlite_master WHERE type='table' AND name='investments'");
         if (investmentsTableExists.length > 0) {
@@ -180,7 +222,6 @@ export const initDatabase = () => {
           try {
             db.execSync("ALTER TABLE investments RENAME TO investments_old;");
             
-            // Recreate investments table with new schema
             db.execSync(`
               CREATE TABLE IF NOT EXISTS investments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -201,7 +242,6 @@ export const initDatabase = () => {
               );
             `);
             
-            // Recreate investment_contributions table with correct foreign key
             db.execSync(`
               CREATE TABLE IF NOT EXISTS investment_contributions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -217,7 +257,6 @@ export const initDatabase = () => {
               );
             `);
 
-            // Migrate data
             const oldData = db.getAllSync("SELECT * FROM investments_old");
             oldData.forEach(row => {
               const result = db.runSync(
@@ -235,133 +274,39 @@ export const initDatabase = () => {
           } catch (e) {
             console.error("Legacy investments migration failed:", e);
           }
-        } else {
-          // They already have the new investments table schema, but investment_contributions foreign key might be broken (pointing to investments_old)
-          // We recreate investment_contributions to fix the foreign key
-          console.log("Repairing investment_contributions table foreign key constraint...");
-          try {
-            db.execSync(`
-              CREATE TABLE IF NOT EXISTS investment_contributions_temp (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                investment_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                currency TEXT NOT NULL,
-                contribution_date TEXT NOT NULL,
-                notes TEXT,
-                attachment_uri TEXT,
-                is_archived INTEGER DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (investment_id) REFERENCES investments (id) ON DELETE CASCADE
-              );
-            `);
-
-            const contribExists = db.getAllSync("SELECT name FROM sqlite_master WHERE type='table' AND name='investment_contributions'");
-            if (contribExists.length > 0) {
-              db.execSync(`
-                INSERT OR IGNORE INTO investment_contributions_temp (id, investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived, created_at)
-                SELECT id, investment_id, amount, currency, contribution_date, notes, attachment_uri, is_archived, created_at
-                FROM investment_contributions
-                WHERE investment_id IN (SELECT id FROM investments);
-              `);
-              db.execSync("DROP TABLE IF EXISTS investment_contributions;");
-            }
-
-            db.execSync("ALTER TABLE investment_contributions_temp RENAME TO investment_contributions;");
-          } catch (e) {
-            console.error("Failed to repair investment_contributions table foreign key:", e);
-          }
-        }
-
-        // Column migrations (safe ALTERS)
-        const alters = [
-          "ALTER TABLE income ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';",
-          "ALTER TABLE expenses ADD COLUMN currency TEXT NOT NULL DEFAULT 'AED';",
-          "ALTER TABLE categories ADD COLUMN icon TEXT DEFAULT 'ellipse-outline';",
-          "ALTER TABLE users ADD COLUMN password_hash TEXT;",
-          "ALTER TABLE users ADD COLUMN pin_hash TEXT;",
-          "ALTER TABLE app_settings ADD COLUMN default_currency_mode TEXT DEFAULT 'AED';",
-          "ALTER TABLE app_settings ADD COLUMN biometrics_enabled INTEGER DEFAULT 0;",
-          "ALTER TABLE app_settings ADD COLUMN dev_cleared INTEGER DEFAULT 0;",
-          "ALTER TABLE income ADD COLUMN attachment_uri TEXT;",
-          "ALTER TABLE expenses ADD COLUMN attachment_uri TEXT;",
-          "ALTER TABLE investment_contributions ADD COLUMN attachment_uri TEXT;",
-          "ALTER TABLE income ADD COLUMN is_archived INTEGER DEFAULT 0;",
-          "ALTER TABLE expenses ADD COLUMN is_archived INTEGER DEFAULT 0;",
-          "ALTER TABLE investment_contributions ADD COLUMN is_archived INTEGER DEFAULT 0;"
-        ];
-
-        for (const query of alters) {
-          try { db.execSync(query); } catch (e) { /* Column already exists */ }
         }
       }
 
-      // v5 migration: Create loans and loan_repayments if they do not exist
-      db.execSync(`
-        CREATE TABLE IF NOT EXISTS loans (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          person_name TEXT NOT NULL,
-          type TEXT NOT NULL,
-          source_type TEXT NOT NULL,
-          amount REAL NOT NULL,
-          currency TEXT NOT NULL,
-          start_date TEXT NOT NULL,
-          expected_return_date TEXT,
-          notes TEXT,
-          status TEXT DEFAULT 'Active',
-          is_archived INTEGER DEFAULT 0,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
+      if (currentVersion < 5) {
+        db.execSync(`
+          CREATE TABLE IF NOT EXISTS loans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            expected_return_date TEXT,
+            notes TEXT,
+            status TEXT DEFAULT 'Active',
+            is_archived INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
 
-        CREATE TABLE IF NOT EXISTS loan_repayments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          loan_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          date TEXT NOT NULL,
-          notes TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (loan_id) REFERENCES loans (id) ON DELETE CASCADE
-        );
+          CREATE TABLE IF NOT EXISTS loan_repayments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            loan_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            date TEXT NOT NULL,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (loan_id) REFERENCES loans (id) ON DELETE CASCADE
+          );
 
-        CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
-        CREATE INDEX IF NOT EXISTS idx_loan_repayments_loan_id ON loan_repayments(loan_id);
-      `);
-
-        // Update PRAGMA user_version to 5
-        db.execSync("PRAGMA user_version = 5;");
-        console.log("Database migration/repair successfully completed to version 5!");
-      }
-
-      // v6 migration: add ownership fields
-      if (currentVersion < 6) {
-        const v6Alters = [
-          "ALTER TABLE income ADD COLUMN income_source TEXT DEFAULT 'OTHER';",
-          "ALTER TABLE expenses ADD COLUMN funded_by TEXT DEFAULT 'OTHER';",
-          "ALTER TABLE investments ADD COLUMN funded_by TEXT DEFAULT 'OTHER';",
-          "ALTER TABLE loans ADD COLUMN funded_by TEXT DEFAULT 'OTHER';"
-        ];
-        for (const query of v6Alters) {
-          try { db.execSync(query); } catch (e) { /* Column already exists */ }
-        }
-        db.execSync("PRAGMA user_version = 6;");
-        console.log("Database migration to version 6 successfully completed!");
-      }
-
-      // v7 migration: add active_currencies field to app_settings
-      if (currentVersion < 7) {
-        try {
-          db.execSync("ALTER TABLE app_settings ADD COLUMN active_currencies TEXT DEFAULT '[\"AED\", \"INR\"]';");
-        } catch (e) { /* Column already exists */ }
-        db.execSync("PRAGMA user_version = 7;");
-        console.log("Database migration to version 7 successfully completed!");
-      }
-
-      // v8 migration: add funded_by to investment_contributions
-      if (currentVersion < 8) {
-        try {
-          db.execSync("ALTER TABLE investment_contributions ADD COLUMN funded_by TEXT DEFAULT 'OTHER';");
-        } catch (e) { /* Column already exists */ }
-        db.execSync("PRAGMA user_version = 8;");
-        console.log("Database migration to version 8 successfully completed!");
+          CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
+          CREATE INDEX IF NOT EXISTS idx_loan_repayments_loan_id ON loan_repayments(loan_id);
+        `);
       }
 
       if (currentVersion < 17) {
@@ -378,36 +323,17 @@ export const initDatabase = () => {
               created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
           `);
-          db.execSync("ALTER TABLE expenses ADD COLUMN payment_source TEXT DEFAULT 'Debit Card';");
-          db.execSync("ALTER TABLE expenses ADD COLUMN credit_card_id INTEGER;");
-        } catch (e) { /* Columns/Tables already exist */ }
-        db.execSync("PRAGMA user_version = 17;");
-        console.log("Database migration to version 17 successfully completed!");
+        } catch (e) { /* Table already exists */ }
       }
-
-      if (currentVersion < 18) {
-        try {
-          db.execSync("ALTER TABLE investments ADD COLUMN completed_installments INTEGER DEFAULT 0;");
-        } catch (e) { /* Column already exists */ }
-        try {
-          db.execSync("ALTER TABLE investment_contributions ADD COLUMN is_opening_balance INTEGER DEFAULT 0;");
-        } catch (e) { /* Column already exists */ }
-        try {
-          db.execSync("ALTER TABLE loans ADD COLUMN is_opening_balance INTEGER DEFAULT 0;");
-        } catch (e) { /* Column already exists */ }
-        try {
-          db.execSync("ALTER TABLE loans ADD COLUMN monthly_emi REAL DEFAULT 0;");
-        } catch (e) { /* Column already exists */ }
-        db.execSync("PRAGMA user_version = 18;");
-        console.log("Database migration to version 18 successfully completed!");
-      }
-
-      db.execSync("PRAGMA foreign_keys = ON;");
-      console.log(`Database migration/repair successfully completed to version 18!`);
-    } else {
-      // Version is already >= 18, ensure foreign keys are enabled
-      db.execSync("PRAGMA foreign_keys = ON;");
     }
+
+    // Dynamic Schema Inspection & Failsafe Auto-Repair Engine
+    // Independent of PRAGMA user_version to guarantee columns exist on all live devices
+    verifyAndRepairSchema(db);
+
+    db.execSync("PRAGMA user_version = 18;");
+    db.execSync("PRAGMA foreign_keys = ON;");
+    console.log(`Database initialization & dynamic schema repair successfully completed to version 18!`);
 
     const iconUpdates = [
       ['Salary',       'briefcase-outline',       'income'],
