@@ -360,10 +360,31 @@ export const initDatabase = () => {
         console.log("Database migration to version 7 successfully completed!");
       }
 
+      if (currentVersion < 17) {
+        try {
+          db.execSync(`
+            CREATE TABLE IF NOT EXISTS credit_cards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              last_4 TEXT NOT NULL,
+              bank_name TEXT NOT NULL,
+              credit_limit REAL NOT NULL,
+              color TEXT NOT NULL,
+              status TEXT DEFAULT 'Active',
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+          `);
+          db.execSync("ALTER TABLE expenses ADD COLUMN payment_source TEXT DEFAULT 'Debit Card';");
+          db.execSync("ALTER TABLE expenses ADD COLUMN credit_card_id INTEGER;");
+        } catch (e) { /* Columns/Tables already exist */ }
+        db.execSync("PRAGMA user_version = 17;");
+        console.log("Database migration to version 17 successfully completed!");
+      }
+
       db.execSync("PRAGMA foreign_keys = ON;");
-      console.log(`Database migration/repair successfully completed to version 7!`);
+      console.log(`Database migration/repair successfully completed to version 17!`);
     } else {
-      // Version is already >= 7, ensure foreign keys are enabled
+      // Version is already >= 17, ensure foreign keys are enabled
       db.execSync("PRAGMA foreign_keys = ON;");
     }
 

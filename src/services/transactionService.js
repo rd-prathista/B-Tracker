@@ -5,29 +5,32 @@ export const SUPPORTED_CURRENCIES = ['AED', 'INR'];
 /**
  * Add a new transaction (income or expense) with its own currency
  */
-export const addTransaction = (type, amount, currency, date, category, notes = '', attachmentUri = null, owner = 'OTHER') => {
+export const addTransaction = (type, amount, currency, date, category, notes = '', attachmentUri = null, owner = 'OTHER', paymentSource = 'Debit Card', creditCardId = null) => {
   const db = getDb();
-  let table;
-  let ownerCol;
+  
   if (type === 'income') {
-    table = 'income';
-    ownerCol = 'income_source';
+    db.runSync(`INSERT INTO income (amount, currency, date, category, notes, attachment_uri, is_archived, income_source) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`, [
+      parseFloat(amount),
+      currency,
+      date,
+      category,
+      notes,
+      attachmentUri,
+      owner || 'OTHER'
+    ]);
   } else if (type === 'expense') {
-    table = 'expenses';
-    ownerCol = 'funded_by';
-  } else {
-    return;
+    db.runSync(`INSERT INTO expenses (amount, currency, date, category, notes, attachment_uri, is_archived, funded_by, payment_source, credit_card_id) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`, [
+      parseFloat(amount),
+      currency,
+      date,
+      category,
+      notes,
+      attachmentUri,
+      owner || 'OTHER',
+      paymentSource,
+      creditCardId
+    ]);
   }
-
-  db.runSync(`INSERT INTO ${table} (amount, currency, date, category, notes, attachment_uri, is_archived, ${ownerCol}) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`, [
-    parseFloat(amount),
-    currency,
-    date,
-    category,
-    notes,
-    attachmentUri,
-    owner || 'OTHER'
-  ]);
 };
 
 /**
@@ -311,9 +314,19 @@ export const updateTransaction = (type, id, data) => {
   if (type === 'income' && data.owner !== undefined) {
     sets.push('income_source = ?');
     params.push(data.owner || 'OTHER');
-  } else if (type === 'expense' && data.owner !== undefined) {
-    sets.push('funded_by = ?');
-    params.push(data.owner || 'OTHER');
+  } else if (type === 'expense') {
+    if (data.owner !== undefined) {
+      sets.push('funded_by = ?');
+      params.push(data.owner || 'OTHER');
+    }
+    if (data.paymentSource !== undefined) {
+      sets.push('payment_source = ?');
+      params.push(data.paymentSource);
+    }
+    if (data.creditCardId !== undefined) {
+      sets.push('credit_card_id = ?');
+      params.push(data.paymentSource === 'Credit Card' ? data.creditCardId : null);
+    }
   }
 
   if (sets.length === 0) return;
@@ -363,7 +376,7 @@ export const getTransactions = (filters = {}) => {
     if (fundedBy && fundedBy !== 'all') {
       b.withFundedBy(fundedBy, 'funded_by');
     }
-    const q = `SELECT e.id, e.amount, e.currency, e.date, e.category, e.notes, e.attachment_uri, e.is_archived, 'expense' as type, COALESCE(c.icon, 'ellipse-outline') as icon 
+    const q = `SELECT e.id, e.amount, e.currency, e.date, e.category, e.notes, e.attachment_uri, e.is_archived, e.payment_source, e.credit_card_id, 'expense' as type, COALESCE(c.icon, 'ellipse-outline') as icon 
                FROM expenses e LEFT JOIN categories c ON e.category = c.name AND c.type = 'expense' WHERE 1=1${b.clause()}`;
     expenses = db.getAllSync(q, b.paramList());
   }
