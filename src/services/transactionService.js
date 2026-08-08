@@ -867,14 +867,14 @@ export const getCreditCardSpending = (currency, startDate, endDate, archiveMode 
       
       UNION ALL
       
-      SELECT ic.amount, ic.credit_card_id, inv.name as category
+      SELECT ic.amount, NULL as credit_card_id, inv.name as category
       FROM investment_contributions ic 
       JOIN investments inv ON ic.investment_id = inv.id
       WHERE ic.currency = ? AND ic.contribution_date >= ? AND ic.contribution_date <= ? AND ic.is_opening_balance = 0${archIC}${ownerClauseIC}
       
       UNION ALL
       
-      SELECT r.amount, r.credit_card_id, 'Loan Repayment' as category
+      SELECT r.amount, NULL as credit_card_id, 'Loan Repayment' as category
       FROM loan_repayments r 
       JOIN loans l ON r.loan_id = l.id
       WHERE l.currency = ? AND r.date >= ? AND r.date <= ? AND l.type = 'I Borrowed' AND l.is_opening_balance = 0${archL}${ownerClauseL}

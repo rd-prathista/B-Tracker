@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { getReportData, getCategoryTrends, getCashflowTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment, getOwnershipBalanceBreakdown, getCreditCardSpending } from '../services/transactionService';
+import { getReportData, getCategoryTrends, getCashflowTrends, getInvestmentAnalytics, clearAllInvestments, deleteInvestment, getOwnershipBalanceBreakdown, getCreditCardSpending, getOwnerBalances } from '../services/transactionService';
 import { getLoans, getLoanSummary } from '../services/loanService';
 import { getActiveCurrencies } from '../database/db';
 
@@ -417,102 +417,131 @@ const [expandedId, setExpandedId] = useState(null);
     );
   };
 
-  const renderOverview = () => (
-    <FadeInView delay={0}>
-      <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, gap: 8, paddingBottom: 16 }}>
-        {FILTERS.map((f) => (
-          <TouchableOpacity key={f} style={[styles.dateFilterBtn, dateFilter === f && { borderColor: accentColor, backgroundColor: accentColor + '15' }]} onPress={() => handleFilterSelect(f)}>
-            <Text style={[styles.dateFilterText, dateFilter === f && { color: accentColor }]}>
-              {f === 'Custom' && dateFilter === 'Custom' ? `${formatDate(customStart)} - ${formatDate(customEnd)}` : f}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+  const renderOverview = () => {
+    const isPositiveSavings = overviewData.savings >= 0;
+    const savingsPercent = overviewData.totalIncome > 0 
+      ? ((overviewData.savings / overviewData.totalIncome) * 100).toFixed(1) 
+      : '0.0';
 
-      <View style={{ paddingHorizontal: 18 }}>
-        <GlassCard style={styles.unifiedSummaryCard} contentStyle={styles.unifiedSummaryCardContent}>
-          <LinearGradient colors={[accentColor + '10', 'transparent']} style={StyleSheet.absoluteFillObject} start={{x:0, y:0}} end={{x:1, y:1}} />
-          
-          <View style={styles.usRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={[styles.usIconWrap, { backgroundColor: colors.success + '20' }]}>
-                <Ionicons name="arrow-down" size={14} color={colors.success} />
-              </View>
-              <Text style={styles.usLabel}>INCOME</Text>
-            </View>
-            <Text style={[styles.usVal, { color: colors.success }]} numberOfLines={1} adjustsFontSizeToFit>{fmt(overviewData.totalIncome)}</Text>
-          </View>
-          
-          <View style={styles.usDivider} />
-          
-          <View style={styles.usRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={[styles.usIconWrap, { backgroundColor: colors.danger + '20' }]}>
-                <Ionicons name="arrow-up" size={14} color={colors.danger} />
-              </View>
-              <Text style={styles.usLabel}>EXPENSE</Text>
-            </View>
-            <Text style={[styles.usVal, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>{fmt(overviewData.totalExpense)}</Text>
-          </View>
-          
-          <View style={styles.usDivider} />
-          
-          <View style={styles.usRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={[styles.usIconWrap, { backgroundColor: accentColor + '20' }]}>
-                <Ionicons name="wallet-outline" size={14} color={accentColor} />
-              </View>
-              <Text style={styles.usLabel}>AVAILABLE SAVINGS</Text>
-            </View>
-            <Text style={[styles.usVal, { color: overviewData.savings >= 0 ? colors.text : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
-              {overviewData.savings < 0 ? '-' : ''}{fmt(Math.abs(overviewData.savings))}
-            </Text>
-          </View>
-          
-          <View style={styles.usDivider} />
-          
-          <View style={styles.usRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={[styles.usIconWrap, { backgroundColor: (overviewData.savings >= 0 ? colors.success : colors.danger) + '20' }]}>
-                <Ionicons name="pie-chart-outline" size={14} color={overviewData.savings >= 0 ? colors.success : colors.danger} />
-              </View>
-              <Text style={styles.usLabel}>SAVINGS %</Text>
-            </View>
-            <Text style={[styles.usVal, { color: overviewData.savings >= 0 ? colors.success : colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
-              {overviewData.totalIncome > 0 ? ((overviewData.savings / overviewData.totalIncome) * 100).toFixed(1) + '%' : '--'}
-            </Text>
-          </View>
-        </GlassCard>
+    return (
+      <FadeInView delay={0}>
+        <View style={{ paddingHorizontal: 18, marginBottom: 14 }}>{renderCurrencyToggle()}</View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, gap: 8, paddingBottom: 16 }}>
+          {FILTERS.map((f) => (
+            <TouchableOpacity key={f} style={[styles.dateFilterBtn, dateFilter === f && { borderColor: accentColor, backgroundColor: accentColor + '15' }]} onPress={() => handleFilterSelect(f)}>
+              <Text style={[styles.dateFilterText, dateFilter === f && { color: accentColor }]}>
+                {f === 'Custom' && dateFilter === 'Custom' ? `${formatDate(customStart)} - ${formatDate(customEnd)}` : f}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-        {/* Ownership Balance Breakdown */}
-        {renderOwnershipBalanceBreakdown()}
+        <View style={{ paddingHorizontal: 18 }}>
+          {/* Modern Premium Hero Summary Card */}
+          <GlassCard style={styles.heroSummaryCard} contentStyle={styles.heroSummaryContent}>
+            <LinearGradient 
+              colors={[accentColor + '25', 'transparent', 'rgba(15, 23, 42, 0.4)']} 
+              style={StyleSheet.absoluteFillObject} 
+              start={{ x: 0, y: 0 }} 
+              end={{ x: 1, y: 1 }} 
+            />
+            
+            {/* Header Badge Row */}
+            <View style={styles.heroHeaderRow}>
+              <View style={styles.heroBadge}>
+                <Ionicons name="sparkles" size={12} color={accentColor} />
+                <Text style={[styles.heroBadgeText, { color: accentColor }]}>
+                  {dateFilter === 'Custom' ? 'Custom Period' : dateFilter}
+                </Text>
+              </View>
+              <View style={[styles.currencyPill, { backgroundColor: currency === 'AED' ? colors.primary + '20' : colors.accentTeal + '20' }]}>
+                <Text style={[styles.currencyPillText, { color: currency === 'AED' ? colors.primary : colors.accentTeal }]}>{currency}</Text>
+              </View>
+            </View>
 
-        {/* Combined Ownership Table above Spending Insights */}
-        {(overviewData.totalIncome > 0 || overviewData.totalExpense > 0) && renderCombinedOwnershipOverview()}
-
-        <Text style={[typography.sectionLabel, { marginBottom: 14, marginTop: 10 }]}>SPENDING INSIGHTS</Text>
-        {overviewData.breakdown.length === 0 ? (
-          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No expenses in this period</Text></View>
-        ) : (
-          <GlassCard style={styles.breakdownCard} contentStyle={styles.breakdownCardContent}>
-            {overviewData.breakdown.map((item) => (
-              <View key={item.category} style={styles.breakdownRow}>
-                <View style={styles.bRowTop}>
-                  <View style={styles.bIconWrap}><Ionicons name={item.icon || 'ellipse-outline'} size={14} color={colors.text} /></View>
-                  <Text style={styles.bCategory}>{item.category}</Text>
-                  <Text style={styles.bAmount} numberOfLines={1} adjustsFontSizeToFit>{fmt(item.total)}</Text>
+            {/* Net Available Savings Main Number */}
+            <View style={{ marginTop: 12, marginBottom: 16 }}>
+              <Text style={styles.heroLabel}>NET CASHFLOW / SAVINGS</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
+                <Text style={styles.heroCurrency}>{currency}</Text>
+                <Text style={[styles.heroSavingsAmount, { color: isPositiveSavings ? colors.text : colors.danger }]}>
+                  {isPositiveSavings ? '' : '-'}{fmt(Math.abs(overviewData.savings))}
+                </Text>
+              </View>
+              
+              {/* Savings Rate Tag */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
+                <View style={[styles.rateTag, { backgroundColor: (isPositiveSavings ? colors.success : colors.danger) + '20' }]}>
+                  <Ionicons name={isPositiveSavings ? "trending-up" : "trending-down"} size={13} color={isPositiveSavings ? colors.success : colors.danger} />
+                  <Text style={[styles.rateTagText, { color: isPositiveSavings ? colors.success : colors.danger }]}>
+                    {savingsPercent}% Saved
+                  </Text>
                 </View>
-                <View style={styles.bBarTrack}>
-                  <View style={[styles.bBarFill, { width: `${item.percentage}%`, backgroundColor: colors.dangerLight }]} />
-                </View>
+                <Text style={styles.heroSubtext}>
+                  {isPositiveSavings ? 'Positive net accumulation' : 'Deficit in current period'}
+                </Text>
               </View>
-            ))}
+            </View>
+
+            {/* Income & Expense Side-by-Side Stat Cards */}
+            <View style={styles.statsDualRow}>
+              {/* Income Block */}
+              <View style={[styles.statBox, { borderColor: colors.success + '30' }]}>
+                <View style={styles.statBoxHeader}>
+                  <View style={[styles.statIconWrap, { backgroundColor: colors.success + '20' }]}>
+                    <Ionicons name="arrow-down" size={13} color={colors.success} />
+                  </View>
+                  <Text style={styles.statBoxLabel}>INCOME</Text>
+                </View>
+                <Text style={[styles.statBoxValue, { color: colors.success }]} numberOfLines={1} adjustsFontSizeToFit>
+                  +{currency} {fmt(overviewData.totalIncome)}
+                </Text>
+              </View>
+
+              {/* Expense Block */}
+              <View style={[styles.statBox, { borderColor: colors.danger + '30' }]}>
+                <View style={styles.statBoxHeader}>
+                  <View style={[styles.statIconWrap, { backgroundColor: colors.danger + '20' }]}>
+                    <Ionicons name="arrow-up" size={13} color={colors.danger} />
+                  </View>
+                  <Text style={styles.statBoxLabel}>EXPENSE</Text>
+                </View>
+                <Text style={[styles.statBoxValue, { color: colors.danger }]} numberOfLines={1} adjustsFontSizeToFit>
+                  -{currency} {fmt(overviewData.totalExpense)}
+                </Text>
+              </View>
+            </View>
           </GlassCard>
-        )}
-      </View>
-    </FadeInView>
-  );
+
+          {/* Ownership Balance Breakdown */}
+          {renderOwnershipBalanceBreakdown()}
+
+          {/* Combined Ownership Table above Spending Insights */}
+          {(overviewData.totalIncome > 0 || overviewData.totalExpense > 0) && renderCombinedOwnershipOverview()}
+
+          <Text style={[typography.sectionLabel, { marginBottom: 14, marginTop: 10 }]}>SPENDING INSIGHTS</Text>
+          {overviewData.breakdown.length === 0 ? (
+            <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No expenses in this period</Text></View>
+          ) : (
+            <GlassCard style={styles.breakdownCard} contentStyle={styles.breakdownCardContent}>
+              {overviewData.breakdown.map((item) => (
+                <View key={item.category} style={styles.breakdownRow}>
+                  <View style={styles.bRowTop}>
+                    <View style={styles.bIconWrap}><Ionicons name={item.icon || 'ellipse-outline'} size={14} color={colors.text} /></View>
+                    <Text style={styles.bCategory}>{item.category}</Text>
+                    <Text style={styles.bAmount} numberOfLines={1} adjustsFontSizeToFit>{currency} {fmt(item.total)}</Text>
+                  </View>
+                  <View style={styles.bBarTrack}>
+                    <View style={[styles.bBarFill, { width: `${item.percentage}%`, backgroundColor: colors.dangerLight }]} />
+                  </View>
+                </View>
+              ))}
+            </GlassCard>
+          )}
+        </View>
+      </FadeInView>
+    );
+  };
 
   const renderCategoryTrends = () => {
     const months = Object.keys(categoryTrends).sort().reverse();
@@ -1561,7 +1590,28 @@ const styles = StyleSheet.create({
 
   scroll: { paddingBottom: 40 },
 
-  // Unified Summary - Vertical Rows (Reduced Height)
+  // Hero Summary Card Styles
+  heroSummaryCard: { marginBottom: 16, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
+  heroSummaryContent: { padding: 18 },
+  heroHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.cardSolid, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
+  heroBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 0.5 },
+  currencyPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  currencyPillText: { fontFamily: 'Inter_800ExtraBold', fontSize: 11 },
+  heroLabel: { fontFamily: 'Inter_700Bold', fontSize: 11, color: colors.textMuted, letterSpacing: 0.8 },
+  heroCurrency: { fontFamily: 'Inter_700Bold', fontSize: 16, color: colors.textSecondary },
+  heroSavingsAmount: { fontFamily: 'Inter_800ExtraBold', fontSize: 28, letterSpacing: -0.5 },
+  rateTag: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  rateTagText: { fontFamily: 'Inter_700Bold', fontSize: 11 },
+  heroSubtext: { fontFamily: 'Inter_500Medium', fontSize: 11, color: colors.textMuted },
+  statsDualRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  statBox: { flex: 1, backgroundColor: colors.cardSolid + '80', borderRadius: 16, padding: 12, borderWidth: 1 },
+  statBoxHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  statIconWrap: { width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  statBoxLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, color: colors.textSecondary, letterSpacing: 0.5 },
+  statBoxValue: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+
+  // Legacy Summary Card Styles
   unifiedSummaryCard: { marginBottom: 12, borderRadius: 16, overflow: 'hidden' },
   unifiedSummaryCardContent: { paddingHorizontal: 16, paddingVertical: 12 },
   usRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
