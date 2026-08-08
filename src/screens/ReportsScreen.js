@@ -106,6 +106,9 @@ const [expandedId, setExpandedId] = useState(null);
       // Expense Changes Comparison Logic
       let isValidMonth = false;
       let prevStart, prevEnd;
+      const now = new Date();
+      const isCurrentOngoingMonth = (dateFilter === 'This Month') || 
+        (dateFilter === 'Custom' && customStart && customStart.getFullYear() === now.getFullYear() && customStart.getMonth() === now.getMonth());
 
       if (dateFilter === 'This Month') {
         isValidMonth = true;
@@ -114,7 +117,6 @@ const [expandedId, setExpandedId] = useState(null);
         prevEnd = prevDates.end;
       } else if (dateFilter === 'Last Month') {
         isValidMonth = true;
-        const now = new Date();
         const pStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
         const pEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59);
         prevStart = pStart.toISOString();
@@ -157,16 +159,24 @@ const [expandedId, setExpandedId] = useState(null);
           const prevAmt = Math.round((catMap[cat].prev || 0) * 100) / 100;
           const diff = Math.round((currentAmt - prevAmt) * 100) / 100;
           
-          // Rule 1 & Rule 5: Exclude zero differences (same category + same amount in both months)
-          if (Math.abs(diff) >= 0.01) {
-            changes.push({ 
-              category: cat, 
-              diff: diff, 
-              prev: prevAmt,
-              current: currentAmt,
-              icon: catMap[cat].icon 
-            });
+          // Rule 1: Exclude zero differences (same category + same amount in both months)
+          if (Math.abs(diff) < 0.01) {
+            return;
           }
+
+          // Rule 4: Previous-month category with 0 in CURRENT ONGOING month -> EXCLUDE!
+          // Avoid showing misleading 0 decrease for current ongoing month when expense isn't recorded yet.
+          if (isCurrentOngoingMonth && currentAmt === 0 && prevAmt > 0) {
+            return;
+          }
+          
+          changes.push({ 
+            category: cat, 
+            diff: diff, 
+            prev: prevAmt,
+            current: currentAmt,
+            icon: catMap[cat].icon 
+          });
         });
         
         changes.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
