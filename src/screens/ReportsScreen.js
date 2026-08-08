@@ -505,12 +505,6 @@ const [expandedId, setExpandedId] = useState(null);
           </View>
         </GlassCard>
 
-        {/* Ownership Balance Breakdown */}
-        {renderOwnershipBalanceBreakdown()}
-
-        {/* Combined Ownership Table above Spending Insights */}
-        {(overviewData.totalIncome > 0 || overviewData.totalExpense > 0) && renderCombinedOwnershipOverview()}
-
         <Text style={[typography.sectionLabel, { marginBottom: 14, marginTop: 10 }]}>SPENDING INSIGHTS</Text>
         {overviewData.breakdown.length === 0 ? (
           <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No expenses in this period</Text></View>
