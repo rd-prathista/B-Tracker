@@ -4,17 +4,26 @@ import * as SQLite from 'expo-sqlite';
 const db = SQLite.openDatabaseSync('btracker.db');
 
 const ensureColumnExists = (dbInstance, tableName, columnName, columnDef) => {
-  try {
-    const tableInfo = dbInstance.getAllSync(`PRAGMA table_info(${tableName});`);
-    const exists = tableInfo.some(col => col.name === columnName);
-    console.log(`[DB Schema Check] ${tableName}.${columnName}: ${exists ? 'EXISTS' : 'MISSING'}`);
-    if (!exists) {
-      console.log(`[DB Schema Repair] Executing: ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
+  let tableInfo = dbInstance.getAllSync(`PRAGMA table_info(${tableName});`);
+  let exists = tableInfo.some(col => col.name === columnName);
+  console.log(`[DB Schema Check] ${tableName}.${columnName}: ${exists ? 'EXISTS' : 'MISSING'}`);
+  
+  if (!exists) {
+    console.log(`[DB Schema Repair] Executing: ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
+    try {
       dbInstance.execSync(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef};`);
-      console.log(`[DB Schema Repair] Successfully added ${columnName} to ${tableName}`);
+    } catch (e) {
+      console.error(`[DB Schema Repair Warning] ALTER TABLE ${tableName} ADD COLUMN ${columnName} error:`, e);
     }
-  } catch (e) {
-    console.error(`[DB Schema Error] Failed to ensure column ${columnName} on table ${tableName}:`, e);
+
+    // Strict Post-Repair Verification Check
+    tableInfo = dbInstance.getAllSync(`PRAGMA table_info(${tableName});`);
+    exists = tableInfo.some(col => col.name === columnName);
+    if (!exists) {
+      throw new Error(`CRITICAL SCHEMA REPAIR FAILURE: Column '${columnName}' in table '${tableName}' could not be added. Physical DB alteration failed!`);
+    } else {
+      console.log(`[DB Schema Repair Success] Verified '${columnName}' physically exists in '${tableName}'.`);
+    }
   }
 };
 
