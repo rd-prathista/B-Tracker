@@ -103,27 +103,33 @@ const [expandedId, setExpandedId] = useState(null);
       setCategoryTrends(getCategoryTrends(currency, archiveMode, ownerFilter));
       setCcSpending(getCreditCardSpending(currency, start, end, archiveMode, ownerFilter));
       
-      // Expense Changes Option C Logic
+      // Expense Changes Comparison Logic
       let isValidMonth = false;
       let prevStart, prevEnd;
 
-      if (dateFilter === 'This Month' || dateFilter === 'Last Month') {
+      if (dateFilter === 'This Month') {
         isValidMonth = true;
-        const startObj = new Date(start);
-        prevStart = new Date(startObj.getFullYear(), startObj.getMonth() - 1, 1).toISOString();
-        prevEnd = new Date(startObj.getFullYear(), startObj.getMonth(), 0, 23, 59, 59).toISOString();
-      } else if (dateFilter === 'Custom') {
-        const startObj = new Date(start);
-        const endObj = new Date(end);
-        
-        if (startObj.getDate() === 1) {
-          const expectedEndObj = new Date(startObj.getFullYear(), startObj.getMonth() + 1, 0);
-          if (endObj.getFullYear() === expectedEndObj.getFullYear() && 
-              endObj.getMonth() === expectedEndObj.getMonth() && 
-              endObj.getDate() === expectedEndObj.getDate()) {
+        const prevDates = getDatesForFilter('Last Month');
+        prevStart = prevDates.start;
+        prevEnd = prevDates.end;
+      } else if (dateFilter === 'Last Month') {
+        isValidMonth = true;
+        const now = new Date();
+        const pStart = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        const pEnd = new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59);
+        prevStart = pStart.toISOString();
+        prevEnd = pEnd.toISOString();
+      } else if (dateFilter === 'Custom' && customStart && customEnd) {
+        if (customStart.getDate() === 1) {
+          const expectedEnd = new Date(customStart.getFullYear(), customStart.getMonth() + 1, 0);
+          if (customEnd.getFullYear() === expectedEnd.getFullYear() && 
+              customEnd.getMonth() === expectedEnd.getMonth() && 
+              customEnd.getDate() === expectedEnd.getDate()) {
             isValidMonth = true;
-            prevStart = new Date(startObj.getFullYear(), startObj.getMonth() - 1, 1).toISOString();
-            prevEnd = new Date(startObj.getFullYear(), startObj.getMonth(), 0, 23, 59, 59).toISOString();
+            const pStart = new Date(customStart.getFullYear(), customStart.getMonth() - 1, 1);
+            const pEnd = new Date(customStart.getFullYear(), customStart.getMonth(), 0, 23, 59, 59);
+            prevStart = pStart.toISOString();
+            prevEnd = pEnd.toISOString();
           }
         }
       }
@@ -135,25 +141,29 @@ const [expandedId, setExpandedId] = useState(null);
         
         const catMap = {};
         currentBreakdown.forEach(item => {
-          catMap[item.category] = { current: item.total, prev: 0, icon: item.icon };
+          catMap[item.category] = { current: Number(item.total) || 0, prev: 0, icon: item.icon };
         });
         prevBreakdown.forEach(item => {
           if (catMap[item.category]) {
-            catMap[item.category].prev = item.total;
+            catMap[item.category].prev = Number(item.total) || 0;
           } else {
-            catMap[item.category] = { current: 0, prev: item.total, icon: item.icon };
+            catMap[item.category] = { current: 0, prev: Number(item.total) || 0, icon: item.icon };
           }
         });
         
         const changes = [];
         Object.keys(catMap).forEach(cat => {
-          const diff = catMap[cat].current - catMap[cat].prev;
-          if (diff !== 0) {
+          const currentAmt = Math.round((catMap[cat].current || 0) * 100) / 100;
+          const prevAmt = Math.round((catMap[cat].prev || 0) * 100) / 100;
+          const diff = Math.round((currentAmt - prevAmt) * 100) / 100;
+          
+          // Rule 1 & Rule 5: Exclude zero differences (same category + same amount in both months)
+          if (Math.abs(diff) >= 0.01) {
             changes.push({ 
               category: cat, 
               diff: diff, 
-              prev: catMap[cat].prev,
-              current: catMap[cat].current,
+              prev: prevAmt,
+              current: currentAmt,
               icon: catMap[cat].icon 
             });
           }
