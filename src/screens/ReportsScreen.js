@@ -504,26 +504,6 @@ const [expandedId, setExpandedId] = useState(null);
             </Text>
           </View>
         </GlassCard>
-
-        <Text style={[typography.sectionLabel, { marginBottom: 14, marginTop: 10 }]}>SPENDING INSIGHTS</Text>
-        {overviewData.breakdown.length === 0 ? (
-          <View style={styles.emptyWrap}><Text style={typography.bodySmall}>No expenses in this period</Text></View>
-        ) : (
-          <GlassCard style={styles.breakdownCard} contentStyle={styles.breakdownCardContent}>
-            {overviewData.breakdown.map((item) => (
-              <View key={item.category} style={styles.breakdownRow}>
-                <View style={styles.bRowTop}>
-                  <View style={styles.bIconWrap}><Ionicons name={item.icon || 'ellipse-outline'} size={14} color={colors.text} /></View>
-                  <Text style={styles.bCategory}>{item.category}</Text>
-                  <Text style={styles.bAmount} numberOfLines={1} adjustsFontSizeToFit>{fmt(item.total)}</Text>
-                </View>
-                <View style={styles.bBarTrack}>
-                  <View style={[styles.bBarFill, { width: `${item.percentage}%`, backgroundColor: colors.dangerLight }]} />
-                </View>
-              </View>
-            ))}
-          </GlassCard>
-        )}
       </View>
     </FadeInView>
   );
