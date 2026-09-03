@@ -108,8 +108,8 @@ export const addInvestment = (data) => {
     // 2. OB contribution — for portfolio display only, excluded from cash-flow queries
     if (alreadyInvestedAmt > 0) {
       db.runSync(
-        `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes, is_opening_balance) VALUES (?, ?, ?, ?, ?, 1)`,
-        [masterId, alreadyInvestedAmt, currency, start_date, 'Existing Investment (pre-tracking)', 1]
+        `INSERT INTO investment_contributions (investment_id, amount, currency, contribution_date, notes, is_opening_balance, funded_by) VALUES (?, ?, ?, ?, ?, 1, ?)`,
+        [masterId, alreadyInvestedAmt, currency, start_date, 'Existing Investment (pre-tracking)', funded_by || 'OTHER']
       );
     }
     return masterId;
@@ -396,7 +396,7 @@ export const getTransactions = (filters = {}) => {
       b.withFundedBy(fundedBy, 'funded_by');
     }
     
-    const q = `SELECT ic.id, ic.amount, ic.currency, ic.contribution_date as date, inv.name as category, ic.notes, ic.attachment_uri, ic.is_archived, 'investment' as type, COALESCE(cat.icon, 'briefcase-outline') as icon 
+    const q = `SELECT ic.id, ic.amount, ic.currency, ic.contribution_date as date, inv.name as category, ic.notes, ic.attachment_uri, ic.is_archived, ic.funded_by, 'investment' as type, COALESCE(cat.icon, 'briefcase-outline') as icon 
                FROM investment_contributions ic 
                JOIN investments inv ON ic.investment_id = inv.id 
                LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
@@ -495,7 +495,7 @@ export const getOwnerBalances = () => {
       const income = db.getFirstSync(`SELECT SUM(amount) as total FROM income WHERE currency = ? AND is_archived = 0 AND income_source = ?`, [code, owner])?.total || 0;
       const expense = db.getFirstSync(`SELECT SUM(amount) as total FROM expenses WHERE currency = ? AND is_archived = 0 AND funded_by = ?`, [code, owner])?.total || 0;
       
-      const investment = db.getFirstSync(`SELECT SUM(ic.amount) as total FROM investment_contributions ic JOIN investments inv ON ic.investment_id = inv.id WHERE ic.currency = ? AND ic.is_archived = 0 AND ic.is_opening_balance = 0 AND inv.funded_by = ?`, [code, owner])?.total || 0;
+      const investment = db.getFirstSync(`SELECT SUM(ic.amount) as total FROM investment_contributions ic WHERE ic.currency = ? AND ic.is_archived = 0 AND ic.is_opening_balance = 0 AND ic.funded_by = ?`, [code, owner])?.total || 0;
 
       // Real loans
       const totalGiven = db.getFirstSync(`SELECT SUM(amount) as total FROM loans WHERE type = 'I Gave' AND currency = ? AND is_opening_balance = 0 AND funded_by = ?`, [code, owner])?.total || 0;
@@ -845,7 +845,7 @@ export const getCreditCardSpending = (currency, startDate, endDate, archiveMode 
   const ownerClauseE = ownerFilter && ownerFilter !== 'ALL' ? ' AND e.funded_by = ?' : '';
   
   const archIC = archiveMode === 'Archived' ? ' AND ic.is_archived = 1' : archiveMode === 'Active' ? ' AND ic.is_archived = 0' : '';
-  const ownerClauseIC = ownerFilter && ownerFilter !== 'ALL' ? ' AND inv.funded_by = ?' : '';
+  const ownerClauseIC = ownerFilter && ownerFilter !== 'ALL' ? ' AND ic.funded_by = ?' : '';
   
   const archL = archiveMode === 'Archived' ? ' AND l.is_archived = 1' : archiveMode === 'Active' ? ' AND l.is_archived = 0' : '';
   const ownerClauseL = ownerFilter && ownerFilter !== 'ALL' ? ' AND l.funded_by = ?' : '';
@@ -945,7 +945,7 @@ export const getCashflowTrends = (currency, ownerFilter) => {
 
   const ownerClauseInc = ownerFilter && ownerFilter !== 'ALL' ? ' AND income_source = ?' : '';
   const ownerClauseExp = ownerFilter && ownerFilter !== 'ALL' ? ' AND funded_by = ?' : '';
-  const ownerClauseInv = ownerFilter && ownerFilter !== 'ALL' ? ' AND inv.funded_by = ?' : '';
+  const ownerClauseInv = ownerFilter && ownerFilter !== 'ALL' ? ' AND ic.funded_by = ?' : '';
   const ownerClauseL   = ownerFilter && ownerFilter !== 'ALL' ? ' AND funded_by = ?' : '';
   const ownerClauseLJ  = ownerFilter && ownerFilter !== 'ALL' ? ' AND l.funded_by = ?' : '';
 
@@ -1253,6 +1253,8 @@ export const updateMasterInvestment = (id, data) => {
   if (data.tenureType !== undefined) { sets.push('tenure_type = ?'); params.push(data.tenureType); }
   if (data.targetAmount !== undefined) { sets.push('target_amount = ?'); params.push(data.targetAmount); }
   if (data.recurringAmount !== undefined) { sets.push('recurring_amount = ?'); params.push(data.recurringAmount); }
+  if (data.notes !== undefined) { sets.push('notes = ?'); params.push(data.notes); }
+  if (data.funded_by !== undefined) { sets.push('funded_by = ?'); params.push(data.funded_by || 'OTHER'); }
 
   if (sets.length > 0) {
     params.push(id);
