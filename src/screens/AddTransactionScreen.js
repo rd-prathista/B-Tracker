@@ -343,14 +343,7 @@ export default function AddTransactionScreen({ navigation, route }) {
             attachmentUri: attachmentStr,
             paymentSource: paymentSource,
             creditCardId: paymentSource === 'Credit Card' ? creditCardId : null,
-            funded_by: ownership,
-            masterUpdates: {
-              name: invName,
-              category,
-              tenure_value: tenureValue,
-              tenure_type: tenureType,
-              target_amount: targetAmount,
-            }
+            funded_by: ownership
           });
         } else {
           updateTransaction(type, transactionId, {
@@ -686,7 +679,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               )}
             </FadeInView>
 
-            {(!isInvestment || mode === 'setup' || mode === 'editSetup' || mode === 'edit') && (
+            {(!isInvestment || mode === 'setup' || mode === 'editSetup') && (
               <FadeInView delay={160} style={{ marginBottom: 20 }}>
                 <View style={styles.sectionRow}>
                   <Text style={styles.sectionLabel}>{isInvestment ? 'INVESTMENT TYPE' : 'CATEGORY'}</Text>

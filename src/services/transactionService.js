@@ -396,7 +396,7 @@ export const getTransactions = (filters = {}) => {
       b.withFundedBy(fundedBy, 'funded_by');
     }
     
-    const q = `SELECT ic.id, ic.amount, ic.currency, ic.contribution_date as date, inv.name as category, ic.notes, ic.attachment_uri, ic.is_archived, ic.funded_by, 'investment' as type, COALESCE(cat.icon, 'briefcase-outline') as icon 
+    const q = `SELECT ic.id, ic.investment_id, ic.amount, ic.currency, ic.contribution_date as date, inv.name as category, ic.notes, ic.attachment_uri, ic.payment_source, ic.credit_card_id, ic.is_archived, ic.funded_by, 'investment' as type, COALESCE(cat.icon, 'briefcase-outline') as icon 
                FROM investment_contributions ic 
                JOIN investments inv ON ic.investment_id = inv.id 
                LEFT JOIN categories cat ON inv.type = cat.name AND cat.type = 'investment'
@@ -1156,9 +1156,9 @@ export const getOwnershipBalanceBreakdown = (currency) => {
   // Helper to get total investment
   const getInvestment = (owner) => {
     if (owner === 'TOTAL') {
-      return db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0`, [currency])?.total || 0;
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0 AND is_opening_balance = 0`, [currency])?.total || 0;
     } else {
-      return db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0 AND funded_by = ?`, [currency, owner])?.total || 0;
+      return db.getFirstSync(`SELECT SUM(amount) as total FROM investment_contributions WHERE currency = ? AND is_archived = 0 AND is_opening_balance = 0 AND funded_by = ?`, [currency, owner])?.total || 0;
     }
   };
 
