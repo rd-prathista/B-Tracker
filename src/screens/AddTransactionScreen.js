@@ -206,7 +206,27 @@ export default function AddTransactionScreen({ navigation, route }) {
       } catch (e) { setAttachmentUris([]); }
       return;
     }
-    
+
+    // Pre-populate from master when adding a new contribution
+    if (mode === 'contribution' && preSelectedInvestmentId) {
+      const master = getDb().getFirstSync(`SELECT * FROM investments WHERE id = ?`, [preSelectedInvestmentId]);
+      if (master) {
+        setInvName(master.name || '');
+        setOwnership(master.funded_by || 'OTHER');
+        setCurrency(master.currency || 'AED');
+        setSelectedInvestmentId(preSelectedInvestmentId);
+      }
+      setDate(new Date());
+      setAmount('');
+      setNotes('');
+      setAttachmentUris([]);
+      setPaymentSource('Debit Card');
+      setCreditCardId(null);
+      saveLockRef.current = false;
+      setIsSaving(false);
+      return;
+    }
+
     // Default / Reset Mode
     setAmount('');
     setDate(new Date());
@@ -468,39 +488,49 @@ export default function AddTransactionScreen({ navigation, route }) {
                   adjustsFontSizeToFit
                   numberOfLines={1}
                 />
-                <View style={[styles.currencyRow, showValidation && !currency && styles.invalidRow]}>
-                  {getActiveCurrencies().map((cur) => {
-                    const isSelected = currency === cur;
-                    return (
-                      <TouchableOpacity
-                        key={cur}
-                        activeOpacity={0.7}
-                        style={[
-                          styles.currencyBtn,
-                          isSelected && {
-                            borderColor: accentColor,
-                            backgroundColor: accentColor + '25',
-                            transform: [{ scale: 1.05 }]
-                          },
-                        ]}
-                        onPress={() => {
-                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                          setCurrency(cur);
-                          setShowValidation(false);
-                        }}
-                        disabled={isSaving}
-                      >
-                        <Text style={[styles.currencyBtnText, { color: isSelected ? accentColor : colors.textSecondary }, isSelected && { fontFamily: 'Inter_800ExtraBold' }]}>{cur}</Text>
-                        {isSelected && <View style={[styles.activeDot, { backgroundColor: accentColor }]} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                {!(isContribution || (isEdit && isInvestment)) && (
+                  <View style={[styles.currencyRow, showValidation && !currency && styles.invalidRow]}>
+                    {getActiveCurrencies().map((cur) => {
+                      const isSelected = currency === cur;
+                      return (
+                        <TouchableOpacity
+                          key={cur}
+                          activeOpacity={0.7}
+                          style={[
+                            styles.currencyBtn,
+                            isSelected && {
+                              borderColor: accentColor,
+                              backgroundColor: accentColor + '25',
+                              transform: [{ scale: 1.05 }]
+                            },
+                          ]}
+                          onPress={() => {
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setCurrency(cur);
+                            setShowValidation(false);
+                          }}
+                          disabled={isSaving}
+                        >
+                          <Text style={[styles.currencyBtnText, { color: isSelected ? accentColor : colors.textSecondary }, isSelected && { fontFamily: 'Inter_800ExtraBold' }]}>{cur}</Text>
+                          {isSelected && <View style={[styles.activeDot, { backgroundColor: accentColor }]} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+                {(isContribution || (isEdit && isInvestment)) && currency && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 }}>
+                    <View style={[styles.currencyBtn, { borderColor: accentColor, backgroundColor: accentColor + '25' }]}>
+                      <Text style={[styles.currencyBtnText, { color: accentColor, fontFamily: 'Inter_800ExtraBold' }]}>{currency}</Text>
+                    </View>
+                    <Text style={{ color: colors.textMuted, fontSize: 11, fontFamily: 'Inter_400Regular' }}>Currency inherited from investment</Text>
+                  </View>
+                )}
               </GlassCard>
             </FadeInView>
 
             {/* Investment Specific Fields */}
-            {isInvestment && (mode === 'setup' || mode === 'editSetup' || mode === 'edit') && (
+            {isInvestment && (mode === 'setup' || mode === 'editSetup') && (
               <FadeInView delay={50}>
                 <Text style={styles.sectionLabel}>INVESTMENT NAME</Text>
                 <TextInput
@@ -609,25 +639,20 @@ export default function AddTransactionScreen({ navigation, route }) {
               </FadeInView>
             )}
 
-            {isInvestment && mode === 'contribution' && (
+            {(isContribution || (isEdit && isInvestment)) && (
               <FadeInView delay={50}>
-                <Text style={styles.sectionLabel}>SELECT INVESTMENT</Text>
-                <TouchableOpacity 
-                  style={[styles.categorySelectBtn, !selectedInvestmentId && styles.invalidBtn]} 
-                  onPress={() => setShowInvestmentPicker(true)}
-                  disabled={isSaving || !!preSelectedInvestmentId || isEdit}
-                >
+                <Text style={styles.sectionLabel}>INVESTMENT</Text>
+                <View style={[styles.categorySelectBtn, { borderColor: 'rgba(99,102,241,0.35)', backgroundColor: 'rgba(99,102,241,0.06)' }]}>
                   <View style={styles.categorySelectLeft}>
-                    {selectedInvestmentId ? (
-                      <Text style={styles.selectedCategoryText}>
-                        {activeInvestments.find(inv => inv.id == selectedInvestmentId)?.name || 'Unknown'}
-                      </Text>
-                    ) : (
-                      <Text style={styles.placeholderText}>Select Master Investment</Text>
-                    )}
+                    <Ionicons name="briefcase-outline" size={18} color={colors.accentIndigo} />
+                    <Text style={[styles.selectedCategoryText, { color: colors.text }]}>
+                      {invName || (activeInvestments.find(inv => inv.id == selectedInvestmentId)?.name) || 'Investment'}
+                    </Text>
                   </View>
-                  {!preSelectedInvestmentId && <Ionicons name="chevron-down" size={18} color={colors.textMuted} />}
-                </TouchableOpacity>
+                  <View style={{ backgroundColor: 'rgba(99,102,241,0.15)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ color: colors.accentIndigo, fontSize: 10, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.5 }}>FIXED</Text>
+                  </View>
+                </View>
               </FadeInView>
             )}
 
