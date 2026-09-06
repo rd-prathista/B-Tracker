@@ -53,13 +53,25 @@ export default function AddTransactionScreen({ navigation, route }) {
   const routeParams = route.params || {};
   const type = routeParams.type ?? 'expense';
   const transactionId = routeParams.transactionId;
-  const isEdit = routeParams.mode === 'edit' && transactionId != null;
+  const preSelectedInvestmentId = routeParams.investmentId;
   const isInvestment = type === 'investment';
-  
+
   // Investment Specific
   const mode = routeParams.mode || (isInvestment ? 'setup' : 'create'); 
-  const isContribution = isInvestment && mode === 'contribution';
-  const preSelectedInvestmentId = routeParams.investmentId;
+
+  const isEdit = (mode === 'edit' || mode === 'editSetup' || mode === 'editContribution') && (transactionId != null || preSelectedInvestmentId != null);
+
+  const isContribution = isInvestment && (
+    mode === 'contribution' || 
+    mode === 'editContribution' || 
+    (mode === 'edit' && transactionId != null)
+  );
+
+  const isMasterSetup = isInvestment && (
+    mode === 'setup' || 
+    mode === 'editSetup' || 
+    (mode === 'edit' && transactionId == null)
+  );
 
   const OWNER_OPTIONS = [
     { label: '👩🏻 Prathista', value: 'SELF' },
@@ -335,7 +347,7 @@ export default function AddTransactionScreen({ navigation, route }) {
       const attachmentStr = attachmentUris.length > 0 ? JSON.stringify(attachmentUris) : null;
 
       if (isEdit) {
-        if (isInvestment) {
+        if (isContribution) {
           updateContribution(transactionId, {
             amount,
             date: isoDate,
@@ -345,22 +357,8 @@ export default function AddTransactionScreen({ navigation, route }) {
             creditCardId: paymentSource === 'Credit Card' ? creditCardId : null,
             funded_by: ownership
           });
-        } else {
-          updateTransaction(type, transactionId, {
-            amount,
-            currency,
-            date: isoDate,
-            category,
-            notes,
-            attachmentUri: attachmentStr,
-            owner: ownership,
-            paymentSource: type === 'expense' ? paymentSource : undefined,
-            creditCardId: type === 'expense' && paymentSource === 'Credit Card' ? creditCardId : null,
-          });
-        }
-        setToastMessage('✓ Entry updated successfully');
-      } else if (isInvestment) {
-        if (mode === 'editSetup') {
+          setToastMessage('✓ Contribution updated successfully');
+        } else if (isMasterSetup) {
           updateMasterInvestment(preSelectedInvestmentId, {
             name: invName,
             type: category,
@@ -373,7 +371,22 @@ export default function AddTransactionScreen({ navigation, route }) {
             funded_by: ownership
           });
           setToastMessage('✓ Investment updated successfully');
-        } else if (mode === 'setup') {
+        } else {
+          updateTransaction(type, transactionId, {
+            amount,
+            currency,
+            date: isoDate,
+            category,
+            notes,
+            attachmentUri: attachmentStr,
+            owner: ownership,
+            paymentSource: type === 'expense' ? paymentSource : undefined,
+            creditCardId: type === 'expense' && paymentSource === 'Credit Card' ? creditCardId : null,
+          });
+          setToastMessage('✓ Entry updated successfully');
+        }
+      } else if (isInvestment) {
+        if (isMasterSetup) {
           addInvestment({
             name: invName,
             type: category, 
@@ -433,7 +446,7 @@ export default function AddTransactionScreen({ navigation, route }) {
   };
 
   const screenTitle = isInvestment 
-    ? (mode === 'setup' ? 'Setup Investment' : (mode === 'editSetup' ? 'Edit Investment' : (mode === 'contribution' ? 'Add Contribution' : 'Edit Contribution')))
+    ? (isMasterSetup ? (mode === 'editSetup' ? 'Edit Investment' : 'Setup Investment') : (isEdit ? 'Edit Contribution' : 'Add Contribution'))
     : (isIncome ? (isEdit ? 'Edit Income' : 'Add Income') : (isEdit ? 'Edit Expense' : 'Add Expense'));
 
   return (
@@ -465,7 +478,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                 />
 
                 <Text style={styles.fieldLabel}>
-                  {isInvestment && (mode === 'setup' || mode === 'editSetup') 
+                  {isMasterSetup 
                     ? (isExistingRecord ? 'MONTHLY AMOUNT' : 'RECURRING AMOUNT') 
                     : 'AMOUNT'}
                 </Text>
@@ -481,7 +494,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                   adjustsFontSizeToFit
                   numberOfLines={1}
                 />
-                {!(isContribution || (isEdit && isInvestment)) && (
+                {!isContribution && (
                   <View style={[styles.currencyRow, showValidation && !currency && styles.invalidRow]}>
                     {getActiveCurrencies().map((cur) => {
                       const isSelected = currency === cur;
@@ -511,7 +524,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                     })}
                   </View>
                 )}
-                {(isContribution || (isEdit && isInvestment)) && currency && (
+                {isContribution && currency && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 }}>
                     <View style={[styles.currencyBtn, { borderColor: accentColor, backgroundColor: accentColor + '25' }]}>
                       <Text style={[styles.currencyBtnText, { color: accentColor, fontFamily: 'Inter_800ExtraBold' }]}>{currency}</Text>
@@ -523,7 +536,7 @@ export default function AddTransactionScreen({ navigation, route }) {
             </FadeInView>
 
             {/* Investment Specific Fields */}
-            {isInvestment && (mode === 'setup' || mode === 'editSetup') && (
+            {isMasterSetup && (
               <FadeInView delay={50}>
                 <Text style={styles.sectionLabel}>INVESTMENT NAME</Text>
                 <TextInput
@@ -632,7 +645,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               </FadeInView>
             )}
 
-            {(isContribution || (isEdit && isInvestment)) && (
+            {isContribution && (
               <FadeInView delay={50}>
                 <Text style={styles.sectionLabel}>INVESTMENT</Text>
                 <View style={[styles.categorySelectBtn, { borderColor: 'rgba(99,102,241,0.35)', backgroundColor: 'rgba(99,102,241,0.06)' }]}>
@@ -660,7 +673,7 @@ export default function AddTransactionScreen({ navigation, route }) {
                   <Ionicons name="calendar-outline" size={18} color={accentColor} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.dateLabel}>{isInvestment && (mode === 'setup' || mode === 'editSetup') ? 'START DATE' : 'DATE'}</Text>
+                  <Text style={styles.dateLabel}>{isMasterSetup ? 'START DATE' : 'DATE'}</Text>
                   <Text style={styles.dateValue}>{formatDate(date)}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
@@ -679,7 +692,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               )}
             </FadeInView>
 
-            {(!isInvestment || mode === 'setup' || mode === 'editSetup') && (
+            {(!isInvestment || isMasterSetup) && (
               <FadeInView delay={160} style={{ marginBottom: 20 }}>
                 <View style={styles.sectionRow}>
                   <Text style={styles.sectionLabel}>{isInvestment ? 'INVESTMENT TYPE' : 'CATEGORY'}</Text>
