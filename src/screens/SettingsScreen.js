@@ -19,6 +19,7 @@ import FadeInView from '../components/FadeInView';
 import { checkBiometricsAvailability, isBiometricsEnabledInSettings } from '../services/biometricService';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as Updates from 'expo-updates';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCreditCards, addCreditCard, updateCreditCard, deleteCreditCard, checkCreditCardInUse } from '../services/transactionService';
 
@@ -540,6 +541,25 @@ export default function SettingsScreen({ navigation, route }) {
           <FadeInView delay={200}>
             <Text style={[typography.sectionLabel, { marginTop: 20 }]}>APP</Text>
             <GlassCard style={styles.group}>
+              <SettingItem icon="refresh-outline" label="Check for App Updates" onPress={async () => {
+                try {
+                  if (__DEV__) {
+                    Alert.alert('Dev Mode', 'OTA updates are only active in production builds.');
+                    return;
+                  }
+                  const update = await Updates.checkForUpdateAsync();
+                  if (update.isAvailable) {
+                    Alert.alert('Update Found', 'Downloading the latest app update...', [], { cancelable: false });
+                    await Updates.fetchUpdateAsync();
+                    await Updates.reloadAsync();
+                  } else {
+                    Alert.alert('Up to Date', 'You are running the latest version of B Tracker.');
+                  }
+                } catch (e) {
+                  Alert.alert('Update Error', e.message);
+                }
+              }} />
+              <View style={styles.divider} />
               <SettingItem icon="information-circle-outline" label="About B Tracker" onPress={() => navigation.navigate('About')} />
               <View style={styles.divider} />
               <SettingItem icon="log-out-outline" label="Logout" color={colors.danger} onPress={handleLogout} />

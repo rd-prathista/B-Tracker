@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator } from 'react-native';
+import * as Updates from 'expo-updates';
 import {
   useFonts,
   Inter_400Regular,
@@ -33,6 +34,22 @@ export default function App() {
     } finally {
       setDbReady(true);
     }
+  }, []);
+
+  useEffect(() => {
+    async function checkAndApplyUpdates() {
+      if (__DEV__) return;
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (e) {
+        console.log('[OTA Updates] Launch check error:', e);
+      }
+    }
+    checkAndApplyUpdates();
   }, []);
 
   // Wait for fonts & database initialization before rendering to avoid racing queries
