@@ -56,8 +56,17 @@ export default function AddTransactionScreen({ navigation, route }) {
   const preSelectedInvestmentId = routeParams.investmentId;
   const isInvestment = type === 'investment';
 
-  // Investment Specific
-  const mode = routeParams.mode || (isInvestment ? 'setup' : 'create'); 
+  // Smart default for mode if not explicitly passed:
+  // 1. If transactionId is present -> mode defaults to 'edit'
+  // 2. If investmentId is present (and no transactionId) -> mode defaults to 'contribution'
+  // 3. Otherwise for investment -> mode defaults to 'setup' (master investment setup)
+  const mode = routeParams.mode || (
+    transactionId != null 
+      ? 'edit' 
+      : (preSelectedInvestmentId != null 
+          ? (isInvestment ? 'contribution' : 'create')
+          : (isInvestment ? 'setup' : 'create'))
+  );
 
   const isEdit = (mode === 'edit' || mode === 'editSetup' || mode === 'editContribution') && (transactionId != null || preSelectedInvestmentId != null);
 
@@ -67,11 +76,7 @@ export default function AddTransactionScreen({ navigation, route }) {
     (mode === 'edit' && transactionId != null)
   );
 
-  const isMasterSetup = isInvestment && (
-    mode === 'setup' || 
-    mode === 'editSetup' || 
-    (mode === 'edit' && transactionId == null)
-  );
+  const isMasterSetup = isInvestment && !isContribution;
 
   const OWNER_OPTIONS = [
     { label: '👩🏻 Prathista', value: 'SELF' },
@@ -728,7 +733,7 @@ export default function AddTransactionScreen({ navigation, route }) {
               </FadeInView>
             )}
 
-            {(!isInvestment || mode === 'setup' || mode === 'editSetup' || mode === 'contribution' || isEdit) && (
+            {(!isInvestment || isMasterSetup || isContribution) && (
               <FadeInView delay={200} style={{ marginBottom: 20 }}>
                 <Text style={styles.sectionLabel}>{isIncome ? 'INCOME SOURCE' : 'FUNDED BY'}</Text>
                 <View style={styles.typeToggleRow}>
